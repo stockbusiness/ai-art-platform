@@ -13,7 +13,12 @@ this repository and is referenced only as a specification source.**
 ## Prerequisites
 
 - Node.js 22.x (see `.nvmrc`)
-- [Corepack](https://nodejs.org/api/corepack.html) (ships with Node 22)
+- [Corepack](https://nodejs.org/api/corepack.html) (ships with Node 22).
+  Corepack reads the pinned pnpm version from `package.json`'s
+  `packageManager` field and installs/uses exactly that version — no manual
+  `npm install -g pnpm` needed on any OS.
+- Works the same on macOS, Linux, and Windows (PowerShell or Git Bash) — see
+  "Getting started" below.
 
 ## Directory layout
 
@@ -39,11 +44,28 @@ See each app's/package's own `README.md` for its specific responsibility.
 
 ## Getting started
 
+macOS / Linux (bash/zsh):
+
 ```bash
 corepack enable
 pnpm install
 pnpm dev
 ```
+
+Windows (PowerShell):
+
+```powershell
+corepack enable
+pnpm install
+pnpm dev
+```
+
+The commands are identical on Windows — every script in this repo (`dev`,
+`build`, `lint`, `typecheck`, `test`, `format`, `format:check`, `clean`) is
+implemented with cross-platform Node.js CLI tools only (no `rm`, `cp`, or
+other Unix-only shell commands), so there is nothing OS-specific to adjust.
+If you use **Git Bash** on Windows instead of PowerShell, the `bash`
+examples in this README work as-is.
 
 `pnpm dev` starts all four apps concurrently:
 
@@ -76,8 +98,15 @@ workspace's script and caches results (see `turbo.json`).
 Copy `.env.example` to `.env` and adjust as needed:
 
 ```bash
-cp .env.example .env
+cp .env.example .env       # macOS/Linux/Git Bash
 ```
+
+```powershell
+Copy-Item .env.example .env   # PowerShell
+```
+
+This step is optional — every app boots with working defaults (see the
+table below) even without a `.env` file.
 
 | Variable    | Required | Default       | Notes                                    |
 | ----------- | -------- | ------------- | ---------------------------------------- |
@@ -115,8 +144,15 @@ single app in isolation with `--filter`.)
   Turborepo (`dependsOn: ["^build"]`).
 - **Port already in use**: `admin-web` (5173), `liff-web` (5174), and `api`
   (3000) must be free. Stop any other process using those ports.
+  - macOS/Linux: `lsof -i :5173` (repeat per port) to find the PID, then
+    `kill <PID>`.
+  - Windows (PowerShell): `Get-NetTCPConnection -LocalPort 5173` to find the
+    PID, then `Stop-Process -Id <PID>`.
 - **Env validation error on startup**: the error message lists exactly which
   variable is invalid/missing — fix `.env` accordingly.
+- **`pnpm clean` doesn't work on Windows**: it shouldn't happen — every
+  `clean` script uses `rimraf` (a cross-platform Node.js package), not `rm
+-rf`. If you see a Unix-only command fail, please file an issue.
 
 ## PR policy
 
