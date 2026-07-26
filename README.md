@@ -4,7 +4,7 @@ AI Art operations platform — React/TypeScript rebuild. This PR
 (**PR-01 Repository and Monorepo Foundation**) builds only the pnpm/Turborepo
 monorepo foundation. No business features (tenants, auth, LINE, image
 generation, reservations, payments, ...) are implemented yet — see
-`docs/OPEN_QUESTIONS_PR01.md` and the design doc
+`OPEN_QUESTIONS_PR01.md` and the design doc
 `AI_ART_PLATFORM_REDESIGN_MASTER_PLAN_PR01.md` for what comes next.
 
 **The legacy PHP application (`team478a/ai-art-school`) is not modified by
@@ -32,7 +32,7 @@ packages/
   test-utils     Shared test helpers
 docs/
   ARCHITECTURE.md            Module boundaries and TypeScript decisions
-  OPEN_QUESTIONS_PR01.md     Recorded open questions / decisions for this PR
+OPEN_QUESTIONS_PR01.md       Recorded open questions / decisions for this PR (repo root)
 ```
 
 See each app's/package's own `README.md` for its specific responsibility.
@@ -47,12 +47,12 @@ pnpm dev
 
 `pnpm dev` starts all four apps concurrently:
 
-| App        | URL                          |
-|------------|-------------------------------|
-| admin-web  | http://localhost:5173        |
-| liff-web   | http://localhost:5174        |
-| api        | http://localhost:3000        |
-| worker     | (no HTTP endpoint; logs to stdout) |
+| App       | URL                                |
+| --------- | ---------------------------------- |
+| admin-web | http://localhost:5173              |
+| liff-web  | http://localhost:5174              |
+| api       | http://localhost:3000              |
+| worker    | (no HTTP endpoint; logs to stdout) |
 
 Press `Ctrl+C` once to stop all of them.
 
@@ -79,10 +79,10 @@ Copy `.env.example` to `.env` and adjust as needed:
 cp .env.example .env
 ```
 
-| Variable   | Required | Default       | Notes                              |
-|------------|----------|---------------|-------------------------------------|
-| `NODE_ENV` | No       | `development` | One of `development`/`test`/`production` |
-| `LOG_LEVEL`| No       | `info`        | One of Pino's levels (`fatal`...`trace`) |
+| Variable    | Required | Default       | Notes                                    |
+| ----------- | -------- | ------------- | ---------------------------------------- |
+| `NODE_ENV`  | No       | `development` | One of `development`/`test`/`production` |
+| `LOG_LEVEL` | No       | `info`        | One of Pino's levels (`fatal`...`trace`) |
 
 `apps/api` and `apps/worker` validate these at startup via
 `@ai-art-platform/config` and exit with a readable error if a value is
@@ -122,6 +122,6 @@ single app in isolation with `--filter`.)
 
 - One PR implements one scope from the master plan's Phase 1 split
   (PR-01 through PR-06). Out-of-scope work must not be added "while we're at
-  it" — record it in the relevant `docs/OPEN_QUESTIONS_*.md` instead.
+  it" — record it in the relevant `OPEN_QUESTIONS_*.md` instead.
 - The legacy PHP repository (`team478a/ai-art-school`) is a specification
   reference only. Do not copy or port its code.

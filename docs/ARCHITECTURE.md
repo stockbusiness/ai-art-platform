@@ -59,7 +59,7 @@ implementing logic inline.
   against `exactOptionalPropertyTypes`, and adopting it now would require
   workarounds throughout `apps/admin-web`, `apps/liff-web`, and `apps/api`
   that add noise without a concrete PR-01 benefit. This is a revisit point,
-  not a blocker — see `docs/OPEN_QUESTIONS_PR01.md`.
+  not a blocker — see `OPEN_QUESTIONS_PR01.md` at the repo root.
 - Per-package `tsconfig.json` inheritance (extending `tsconfig.base.json`)
   is used rather than full TypeScript project references, per the master
   plan's "Project Reference **or** per-package tsconfig inheritance"

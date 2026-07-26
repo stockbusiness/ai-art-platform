@@ -17,7 +17,7 @@ PR-02以降のBlockerであり、PR-01の範囲外のためここでは繰り返
   であること」（作業前確認 3.）と矛盾するものではなく、単に空リポジトリの
   初期化が必要という意味と判断した。
 - 対応：`main` ブランチを空コミット1件（`chore: initialize empty
-  repository`）で作成し、そこから `feat/pr-01-monorepo-foundation` を分岐
+repository`）で作成し、そこから `feat/pr-01-monorepo-foundation` を分岐
   した。PR-01の内容（README、設定ファイル等）はすべて作業ブランチ側のみに
   存在し、`main` は空のままとした。
 - 業務判断ではなく機械的なブートストラップであるため、実装を止めて確認を
@@ -75,3 +75,20 @@ PR-02以降のBlockerであり、PR-01の範囲外のためここでは繰り返
   ジョブ処理を一切実装しない段階でNestJSのDIコンテナを導入する具体的な利
   点がなく、依存を最小に保てるため。Phase 5でジョブキュー実装時に、必要な
   らNestJS standalone applicationへ移行するか改めて判断する。
+
+## 8. `apps/api` の `dev` スクリプトが `tsx` ではなく `nodemon` + `ts-node/esm` である理由（記録・対応済み）
+
+- 当初、`apps/worker` と同様に `tsx watch` を採用する想定だった。
+- 検証の結果、`tsx`（esbuildベース）は `emitDecoratorMetadata` による
+  コンストラクタ引数の型メタデータを正しく出力せず、NestJSのDIコンテナが
+  `AppController` へ `AppService` を注入できない（実行時に
+  `this.appService` が `undefined` になる）ことを確認した。
+- 対応：`apps/api` の `dev` は実TypeScriptコンパイラを使う
+  `nodemon --exec "node --loader ts-node/esm src/main.ts"` とした。
+  `build`（`tsc`）は元々正しく動作することを確認済み。
+- 単体テスト（`test/app.controller.spec.ts`）も、Nestの`TestingModule`
+  経由のDI解決ではなく、`new AppController(new AppService())` の直接構築
+  に変更した。これはPR-01のControllerが依存注入なしでも成立する単純な形
+  であるため可能な回避であり、業務ロジックを持つ将来のControllerでDIの
+  実行時契約を検証する場合は、SWC（`unplugin-swc`）などdecorator
+  metadataを正しく生成するトランスフォームの導入を検討されたい。
