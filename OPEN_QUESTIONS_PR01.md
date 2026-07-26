@@ -92,3 +92,63 @@ repository`）で作成し、そこから `feat/pr-01-monorepo-foundation` を�
   であるため可能な回避であり、業務ロジックを持つ将来のControllerでDIの
   実行時契約を検証する場合は、SWC（`unplugin-swc`）などdecorator
   metadataを正しく生成するトランスフォームの導入を検討されたい。
+
+---
+
+# ラウンド2：`PR01_FIX.md`（受入条件不足対応）で発生した事項
+
+## 9. テスト件数の訂正（記録）
+
+- PR-01初版の提出物（`IMPLEMENTATION_STATUS_PR01.md`等）は「27テスト」と
+  記載していたが、実際に各workspaceの内訳を合計すると **25テスト**
+  （13ファイル）が正しい値だった（算出誤り）。
+- 対応：本ラウンドの提出物更新で25件へ訂正した。今後、新しいテストを追加
+  する際は`pnpm test`の実出力（`Tests  N passed`の合計）を必ずそのまま
+  転記し、暗算で合計しないこと。
+
+## 10. Windows CI失敗の根本原因と`.gitattributes`導入（記録・対応済み）
+
+- Windows CIの初回実行で、全workspaceの`pnpm format:check`が
+  「Code style issues found」で一斉に失敗した。
+- 原因：GitHub Actions `windows-latest`ランナーは既定で
+  `core.autocrlf=true`のため、checkout時にリポジトリ内のLF改行が
+  ワーキングツリー上でCRLFへ変換される。これが`prettier.config.js`の
+  `endOfLine: "lf"`設定と矛盾し、実質的に全ファイルがフォーマット違反と
+  判定された。
+- 対応：ルートに`.gitattributes`（`* text=auto eol=lf`）を追加し、
+  OSやローカルgit設定によらずLF改行をcheckout時に強制するようにした。
+- 影響範囲の確認：`.gitattributes`追加前に、リポジトリ内の全追跡ファイル
+  が元々LFのみで構成されていることを`grep -rlU $'\r'`で確認済み
+  （該当ファイルなし）。そのため`git add --renormalize .`を実行しても
+  差分は発生しなかった。
+
+## 11. ルート`pnpm dev`のconcurrency不足バグ（記録・対応済み）
+
+- ルートの`pnpm dev`（`turbo run dev`）が
+  `Invalid task configuration: You have 10 persistent tasks but turbo is
+configured for concurrency of 10` で起動不能だった。
+- 原因：4 apps + 6 packages = 10 workspaceすべてが`dev`スクリプトを
+  `persistent: true`のタスクとして持つ構成のため、Turborepoの既定
+  concurrency（10）ちょうどで、依存タスク（`^build`）を実行するスレッド
+  の余地がなく拒否される仕様。
+- 対応：`turbo.json`のトップレベルに`"concurrency": "20"`を追加。
+- **次PRへの引継ぎ**：新しいworkspace（persistentな`dev`タスクを持つ
+  package/app）を追加する際は、`concurrency`の値が
+  「persistentタスク総数＋依存build等の同時実行に必要な余裕」を満たして
+  いるか都度確認すること。値の根拠（なぜ20で足りるか）をコード上のコメ
+  ントでは説明できない（`turbo.json`はJSONでコメント不可）ため、本書に
+  記録する運用とする。
+
+## 12. Playwright／E2Eブラウザ確認の位置づけ（記録・対応済み）
+
+- `PR01_FIX.md`は「推奨：Playwright等でPR-01範囲の最小smoke testを追加」
+  「許容：手動表示確認＋記録」の2案を提示していた。
+- 判断：**今回は「許容」方式を採用**し、Playwrightをリポジトリの
+  devDependencyとして追加しなかった。理由：本セッションの実行環境に
+  Playwright/Chromiumが既にインストール済みであり、それを用いて実際に
+  ブラウザレンダリング・コンソールエラー・モバイル幅表示を確認・記録
+  できたため、リポジトリへの依存追加という追加コストをかけずに指示書の
+  受入条件（9.4）を満たせると判断した。
+- 次PRへの引継ぎ：本格的なE2Eテスト基盤（Playwrightをリポジトリの
+  devDependencyとして導入し、CIで自動実行する）はPR-06（Audit, Health,
+  OpenAPI and CI）以降での判断とする。

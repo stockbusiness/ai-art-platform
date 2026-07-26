@@ -12,6 +12,11 @@
 
 - `d468849` — `chore: initialize empty repository`（`main`、空コミット）
 - `5d19362718af20a4894c84a0267588c67c03b454` — `PR-01: pnpm/Turborepo monorepo foundation`（本ブランチ、実装一式）
+- `1943d87` — 提出物4文書の初版
+- `a7f02fc` — `clean`のクロスプラットフォーム化・Windows CI追加・README Windows手順（`PR01_FIX.md`対応）
+- `eacdfd3` — `.gitattributes`追加（Windows CI失敗の修正）
+- `02fc4b9` — `turbo.json`に`concurrency`追加（ルート`pnpm dev`失敗の修正）
+- （本コミット） — 提出物5文書の更新
 
 ## 作業前確認の結果
 
@@ -89,3 +94,95 @@ pnpm-lock.yaml
 
 （`OPEN_QUESTIONS_PR01.md` および本書を含む提出物4文書は後続コミットで
 repo rootに追加。）
+
+---
+
+## ラウンド2：`PR01_FIX.md`（PR-01受入条件不足対応）対応
+
+### 受領した指示
+
+添付ZIP `PR01_FIX.zip`（`PR01_FIX.md`/`PR01_FIX.txt`、内容同一）。確認時点
+のPR Head SHA `1943d87e7527ec8708cfd1752a78cbd22498da6f` に対する追加修正
+指示。既存PR #1へ追加コミットする方針（新規PR作成禁止、`main`直接push
+禁止）。
+
+### 実施順序（時系列）
+
+1. PR #1・作業ブランチの最新状態を取得し、`rm -rf`等OS依存スクリプトを
+   全workspaceでgrep検索（10箇所ヒット、全て`clean`スクリプト）。
+2. ルートへ`rimraf`をdevDependency追加し、全10 workspaceの`clean`スクリ
+   プトを`rimraf dist .turbo`へ置換。`pnpm build` → `pnpm clean` →
+   （dist/.turbo消滅・ソース維持を確認）→ 存在しないパスへの再実行でも
+   失敗しないことを確認。
+3. `.github/workflows/ci.yml`を`ubuntu-latest`/`windows-latest`のmatrix化
+   （`fail-fast: false`、`continue-on-error`なし）。`pnpm clean`ステップ
+   を追加。
+4. `README.md`にWindows（PowerShell）向け手順、pnpm固定versionの説明、
+   ポート確認方法（Windows/macOS）、`.env.example`のWindows版コピー手順
+   を追記。
+5. コミット・push（`a7f02fc`）。
+6. **Windows CIが失敗**（`<github-webhook-activity>`通知で検知）。ログを
+   取得し原因を特定：Windows runnerの`core.autocrlf=true`によりcheckout
+   時LF→CRLF変換、Prettierの`endOfLine:"lf"`と衝突し全workspaceの
+   `format:check`が失敗。`.gitattributes`（`* text=auto eol=lf`）を追加
+   して解消。既存追跡ファイルにCRLF混入がないことを事前に確認
+   （`grep -rlU $'\r'`で該当なし）。コミット・push（`eacdfd3`）。
+   Windows/Ubuntu両CI成功を確認。
+7. 同一コミットに対し、別ディレクトリ（`/tmp/ai-art-platform-pr01-clean`）
+   への真のClean Cloneを実施。`node_modules`/`dist`/`.turbo`/`.env`が
+   存在しないことを確認した上で、install→format:check→lint→typecheck→
+   test→build→clean→build（再）まで成功を確認。
+8. ルート`pnpm dev`の同時起動確認を実施したところ、**`Invalid task
+configuration`で起動不能**という重大な問題を発見（4 apps + 6
+   packagesの計10 workspaceが全て`dev`をpersistentタスクとして持ち、
+   Turborepoの既定concurrency=10では`^build`依存タスクを実行する余地が
+   ないため拒否される）。`turbo.json`へ`"concurrency": "20"`を追加して
+   解消。修正後、4アプリ全てのHTTP到達を確認
+   （admin-web/liff-web/`/auth/callback`/`/maintenance`/api）。
+9. 終了確認：プロセスグループへの単発SIGINT（端末Ctrl+Cと同一挙動）で
+   全子プロセス（vite×2、nodemon、tsx watch、tsc --watch×6）が残留なく
+   終了、3ポート（5173/5174/3000）とも解放されることを確認。
+10. コミット・push（`02fc4b9`）。
+11. Playwright（本環境に事前インストール済みのChromium/Playwright、
+    リポジトリの依存としては追加せず）で`pnpm dev`実行中のadmin-web/
+    liff-webの5画面（`/`, `/auth/callback`, `/maintenance`, `/`不明ルート
+    2種）を確認。コンソールエラー・未捕捉例外ゼロ、白画面なし、
+    デスクトップ幅（1280×800）・モバイル幅（375×667）双方で本文表示を
+    確認。
+12. 既存27→実測25テストの回帰確認（テスト数は初回提出時の記載ミスで、
+    実際は13ファイル25件が正しい。今回の文書更新で訂正）、秘密情報・
+    PHP・生成物混入チェック、`domain`のframework非依存確認、循環依存
+    確認（`turbo run build --dry-run=json`）を再実施し、いずれも問題
+    なしを確認。
+13. 提出物5文書を更新。
+14. 自己レビュー・コミット・push。GitHub Actions成功確認。PR #1へ完了
+    報告コメントを追記。
+
+### 今回の追加設計判断
+
+- `clean`はNode.js製CLI（`rimraf`）を用い、シェル固有構文（`rm -rf`）へ
+  の依存を排除した。
+- 改行コードの一貫性は`.gitattributes`（`eol=lf`強制）で担保し、
+  開発者ローカルの`core.autocrlf`設定に依存しないようにした。
+- `turbo.json`の`concurrency`は「10 workspace全てにpersistentな`dev`
+  タスクがある」という現在の構成を前提に20とした。将来workspaceが増える
+  場合は再検証が必要（`OPEN_QUESTIONS_PR01.md`参照）。
+- E2Eブラウザ確認は、指示書が明示的に許容する「手動確認＋記録」方式
+  （`PR01_FIX.md` 9.3「許容」）を採用し、Playwrightをリポジトリの
+  devDependencyとしては追加しなかった。本格導入はPR-06以降の判断とする。
+
+### 変更ファイル（ラウンド2）
+
+```text
+package.json（ルート：rimraf追加）
+apps/{admin-web,api,liff-web,worker}/package.json（clean変更）
+packages/{api-contracts,config,domain,logger,test-utils,ui}/package.json（clean変更）
+pnpm-lock.yaml
+.github/workflows/ci.yml（Windows matrix化）
+.gitattributes（新規）
+turbo.json（concurrency追加）
+README.md（Windows手順追記）
+IMPLEMENTATION_STATUS_PR01.md / IMPLEMENTATION_HISTORY_PR01.md /
+TEST_RESULTS_PR01.md / OPEN_QUESTIONS_PR01.md / ROLLBACK_PROCEDURE_PR01.md
+（更新）
+```

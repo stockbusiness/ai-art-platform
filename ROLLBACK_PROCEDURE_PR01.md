@@ -11,7 +11,12 @@
 ## コミットSHA
 
 - ベース（`main`）: `d468849`（空コミット、リポジトリ初期化のみ）
-- 実装: `5d19362718af20a4894c84a0267588c67c03b454`
+- 実装（初版）: `5d19362718af20a4894c84a0267588c67c03b454`
+- 提出物4文書（初版）: `1943d87`
+- クロスプラットフォーム化・Windows CI追加: `a7f02fc`
+- `.gitattributes`追加（Windows CI失敗修正）: `eacdfd3`
+- `turbo.json` concurrency追加（`pnpm dev`失敗修正）: `02fc4b9`
+- 提出物5文書（更新版）: 本コミット
 
 ## 前提
 
@@ -32,6 +37,8 @@ PR-01は新規リポジトリの基盤のみを対象としており、既存PHP
 
 ## Merge後に重大な問題が判明した場合
 
+### PR-01全体をロールバックする場合
+
 1. `main` にマージされた本PRのマージコミット（またはsquash/rebase時は
    実装コミット）に対して `git revert` を実行する。
    ```bash
@@ -49,6 +56,23 @@ PR-01は新規リポジトリの基盤のみを対象としており、既存PHP
 4. PHP版（`team478a/ai-art-school`）は本PRの対象外であり、revertによる
    影響は一切ない。
 
+### `PR01_FIX.md`対応分（ラウンド2）のみを部分的にロールバックする場合
+
+PR-01本体（`5d19362`）は問題なく、ラウンド2の修正コミット
+（`a7f02fc`/`eacdfd3`/`02fc4b9`）にのみ問題がある場合は、これらだけを
+個別に`git revert`できる（依存関係がないため、逆順であれば単独revert
+可能）。
+
+```bash
+git revert 02fc4b9   # turbo.json concurrency
+git revert eacdfd3   # .gitattributes
+git revert a7f02fc   # clean cross-platform化 + Windows CI + README
+```
+
+いずれかをrevertした場合、対応する問題（Windows CI失敗、または
+ルート`pnpm dev`起動不能）が再発することに留意し、PRを再度Draftへ戻すか、
+`OPEN_QUESTIONS_PR01.md`に理由を記録すること。
+
 ## ロールバックを判断する基準（11.9節に基づく）
 
 以下のいずれかに該当する場合はMergeしない、またはMerge後revertする。
@@ -65,8 +89,16 @@ PR-01は新規リポジトリの基盤のみを対象としており、既存PHP
 - PR-02以降の業務機能（DB、認証、LINE、画像生成、予約、決済、利用権、
   ガチャ等）が混入している。
 - Node.js/pnpmのバージョンが固定されていない。
-- Windows環境でnpm scriptsが動作しない（本PRでは実機未検証。
+- Windows CIが失敗する（本PRではUbuntu/Windows双方のGitHub Actions matrix
+  で成功済み。ただし開発者実機Windowsでの動作は未検証、
   `TEST_RESULTS_PR01.md`「未実施のテスト」参照）。
+- `pnpm clean`がWindowsで動作しない（`rimraf`ベースのため通常発生しない
+  想定だが、`README.md`のTroubleshootingに issue化の案内あり）。
+- 真のClean Cloneで再現できない（本PRでは別ディレクトリへの実clone検証
+  済み）。
+- ルート`pnpm dev`で4アプリ同時起動できない、または1回の終了操作で子
+  プロセスが残留する（本PRでは`turbo.json`の`concurrency`修正後に確認
+  済み）。
 - READMEだけではローカル環境を再現できない。
 
 ## 影響範囲の確認
