@@ -186,3 +186,112 @@ IMPLEMENTATION_STATUS_PR01.md / IMPLEMENTATION_HISTORY_PR01.md /
 TEST_RESULTS_PR01.md / OPEN_QUESTIONS_PR01.md / ROLLBACK_PROCEDURE_PR01.md
 （更新）
 ```
+
+---
+
+## ラウンド3：受入条件の再検証（追加修正指示への対応）
+
+### 受領した指示
+
+ラウンド2（`PR01_FIX.md`）で要求された受入条件（`clean`のクロス
+プラットフォーム化、Windows CI、真のClean Clone、ルート`pnpm dev`同時
+起動、ブラウザ表示確認）を改めて満たすよう求める指示。既存PR #1・既存
+ブランチ`feat/pr-01-monorepo-foundation`への追加コミット限定（新規PR・
+新規ブランチ・PR-02着手は禁止）。
+
+### 作業開始前確認（結果）
+
+1. リポジトリ：`stockbusiness/ai-art-platform`（確認済み）
+2. ブランチ：`feat/pr-01-monorepo-foundation`（確認済み、`git branch
+   --show-current`）
+3. リモート最新状態：`git fetch origin feat/pr-01-monorepo-foundation
+   main`実行、ローカルHEADとリモートHEADが完全一致（`e15fa00f8bb379f29
+   f1f96fc50b762080b83decd`）
+4. PR #1の最新Head SHA：`e15fa00f8bb379f29d1f96fc50b762080b83decd`
+   （GitHub API `pull_request_read`で確認）
+5. 直近CI：Ubuntu／Windows双方`success`（同SHA、Run
+   `https://github.com/stockbusiness/ai-art-platform/actions/runs/30223749838`）
+6. 未コミット変更：作業開始時点で`git status --porcelain`は空
+
+### 実施内容（時系列）
+
+1. 既存実装（`clean`のrimraf化、Windows CI matrix、`.gitattributes`、
+   `turbo.json`の`concurrency`）がラウンド2で既に適用済みであることを
+   ファイル内容の直接確認で再検証した（`grep`で`rm -rf`がリポジトリの
+   npm scriptsに残っていないこと、`ci.yml`のmatrix設定、
+   `.gitattributes`の内容、`turbo.json`の`concurrency: "20"`を個別に
+   確認）。コードの再修正は不要と判断した。
+2. ローカルで`pnpm install --frozen-lockfile` →
+   `format:check`／`lint`／`typecheck`／`test`（25件）→`build`→
+   `clean`→`build`（再）の全件成功を再確認。
+3. 真のClean Clone再検証：作業ディレクトリとは別の一時ディレクトリへ
+   `git clone --branch feat/pr-01-monorepo-foundation
+   --single-branch`を実行し、`node_modules`/`dist`/`.turbo`/`.env`が
+   存在しないまっさらな状態から、上記と同じコマンド列がすべて成功する
+   ことを確認した。
+4. ルート`pnpm dev`同時起動再検証：Clean Clone先のディレクトリで
+   `setsid pnpm dev`をプロセスグループとして起動し、10個の永続タスク
+   （app 4 + package 6）すべての起動を`ps -ef`で確認。admin-web
+   （:5173）・liff-web（:5174、`/auth/callback`・`/maintenance`含む）
+   ・api（:3000、DI経由のdev情報を返却）・workerの起動ログを`curl`と
+   ログ確認で検証。
+5. ブラウザ表示確認（Playwright/Chromium、リポジトリ依存には追加せず）
+   を再実施したところ、**admin-web `/`とliff-web `/`の初回ロード時に
+   限り、コンソールエラーが1件検出された**（デスクトップ幅で発生、
+   モバイル幅では2回目以降のnavigationのため未発生というブラウザの
+   favicon自動リクエストの挙動差に起因）。詳細は下記「発生した問題」
+   参照。
+6. 発見した問題を修正後、Clean Clone環境の実行中devサーバーへ同一修正
+   を反映し、Playwrightで再検証。5画面×2ビューポート（デスクトップ
+   1280×800、モバイル375×667）すべてでコンソールエラー0件・
+   ページエラー0件・白画面なしを確認（`RESULT: PASS`）。
+7. プロセスグループへの単発SIGINT送信で、10個の子プロセスすべてが
+   残留なく終了し、ポート3000/5173/5174がすべて解放されることを再確認。
+8. 修正をメインの作業ディレクトリ（`/home/user/ai-art-platform`）にも
+   反映し、`format:check`／`lint`／`typecheck`／`test`（25件）／
+   `build`を再実行し全件成功を確認。
+9. 秘密情報混入チェック（APIキー・パスワード・秘密鍵パターン）、
+   `.env`の追跡有無、PHPコード混入チェック、`packages/domain`の
+   フレームワーク非依存確認、`turbo run build --dry-run=json`による
+   循環依存なしの確認をすべて再実施し、問題なしを確認。
+10. 検証用のClean Cloneディレクトリ・Playwrightスクリプトはセッションの
+    一時ディレクトリ（scratchpad）にのみ保持し、リポジトリへは
+    Commitしていない。
+11. 提出文書を更新。
+
+### 発生した問題と解決方法（ラウンド3）
+
+- **admin-web・liff-webにfaviconが未定義**：`index.html`に
+  `<link rel="icon">`もアプリの`public/`ディレクトリも存在しなかった
+  ため、Chromiumがトップレベルナビゲーション時に`/favicon.ico`を自動
+  リクエストし、Vite dev serverが404を返し、`Failed to load resource:
+  the server responded with a status of 404 (Not Found)`という
+  コンソールエラーが各アプリの初回ロード時にのみ発生していた
+  （2回目以降の同一オリジンnavigationでは再発生しないため、ラウンド2
+  の確認では見落とされていた可能性がある）。
+  対応：両アプリの`index.html`に`<link rel="icon" href="data:," />`を
+  追加し、ブラウザにfaviconが存在しないことを明示してリクエスト自体を
+  抑止した。バイナリ画像ファイルの追加は不要（データURIのみ）。
+  修正後、5画面×2ビューポートで再検証しコンソールエラー0件を確認。
+
+### 今回の変更ファイル
+
+```text
+apps/admin-web/index.html（faviconのリンクタグ追加）
+apps/liff-web/index.html（faviconのリンクタグ追加）
+IMPLEMENTATION_STATUS_PR01.md / IMPLEMENTATION_HISTORY_PR01.md /
+TEST_RESULTS_PR01.md / OPEN_QUESTIONS_PR01.md / ROLLBACK_PROCEDURE_PR01.md
+（更新）
+```
+
+### PRの扱いについて（記録）
+
+今回の指示書は「現在のPRはDraftのまま維持」「条件を満たしてもReady for
+Reviewへ変更しない」としていたが、PR #1は本ラウンド開始時点で既に
+Draftではなく（`draft: false`）、レビュアー`team478a`による1件の
+Approveが付いた状態だった。これは直前の別指示（「最終マージ前の整理と
+再レビュー依頼」）に基づき、既に最新Head SHAへの再レビューを依頼済みの
+進行中の状態である。指示の矛盾点をユーザーに確認したが応答が得られな
+かったため、Draftへの引き戻しは行わず、現状（Ready for Review、再
+レビュー待ち）を維持する判断とした。Merge・Ready for Reviewへの変更は
+いずれも本ラウンドでは実施していない。

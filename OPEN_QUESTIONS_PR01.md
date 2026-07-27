@@ -152,3 +152,40 @@ configured for concurrency of 10` で起動不能だった。
 - 次PRへの引継ぎ：本格的なE2Eテスト基盤（Playwrightをリポジトリの
   devDependencyとして導入し、CIで自動実行する）はPR-06（Audit, Health,
   OpenAPI and CI）以降での判断とする。
+
+---
+
+# ラウンド3：受入条件の再検証で発生した事項
+
+## 13. favicon未定義によるコンソールエラー（記録・対応済み）
+
+- ブラウザ表示確認をPlaywrightで再実施した際、admin-web `/`と
+  liff-web `/`への**初回**ナビゲーション時のみコンソールエラーが1件
+  検出された（`Failed to load resource: the server responded with a
+  status of 404 (Not Found)`）。
+- 原因：両アプリの`index.html`に`<link rel="icon">`がなく、
+  `public/`ディレクトリも存在しなかったため、Chromiumがトップレベル
+  ナビゲーション時に`/favicon.ico`を自動リクエストし、Vite dev server
+  が404を返していた。同一オリジンへの2回目以降のnavigationでは
+  ブラウザ側がリクエストを再送しないため再現せず、ラウンド2の確認
+  （5画面を通しで確認）では見落とされていた可能性が高い。
+- 対応：両アプリの`index.html`に`<link rel="icon" href="data:," />`を
+  追加し、favicon不在を明示してリクエスト自体を抑止した。バイナリ
+  画像ファイルの追加は行っていない。
+- 次PRへの引継ぎ：将来、実際のfaviconを用意する場合は、この
+  `data:,`プレースホルダを実ファイルへのパスへ置き換えること。
+
+## 14. 今回の指示書における「PRをDraftのまま維持」との矛盾（記録）
+
+- 本ラウンドの指示書は「現在のPRはDraftのまま維持してください」
+  「条件を満たしてもReady for Reviewへ変更しない」としていたが、
+  PR #1は本ラウンド開始時点で既にDraftではなく（`draft: false`）、
+  レビュアー`team478a`による1件のApproveが付いていた。これは直前の
+  別指示（「最終マージ前の整理と再レビュー依頼」）に基づき、既に最新
+  Head SHAへの再レビューを依頼済みの、Ready for Review状態での進行中
+  タスクである。
+- `AskUserQuestion`でユーザーに確認したが応答が得られなかったため、
+  破壊的操作（Draftへの引き戻しは、進行中の再レビュー依頼を後退させる
+  可能性がある）を避け、現状（Ready for Review、再レビュー待ち）を
+  維持する判断とした。理由は`IMPLEMENTATION_HISTORY_PR01.md`
+  「ラウンド3」にも記録済み。

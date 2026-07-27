@@ -23,7 +23,8 @@ https://github.com/stockbusiness/ai-art-platform/pull/1
 | `a7f02fc`      | `clean`スクリプトのクロスプラットフォーム化・Windows CI追加・README Windows手順 |
 | `eacdfd3`      | `.gitattributes`追加（Windows CI失敗の修正、詳細は下記）                        |
 | `02fc4b9`      | `turbo.json`に`concurrency`追加（ルート`pnpm dev`失敗の修正、詳細は下記）       |
-| （本コミット） | 提出物5文書の更新（本ラウンド）                                                 |
+| （ラウンド2文書コミット） | 提出物5文書の更新                                                     |
+| （本コミット） | ラウンド3：admin-web/liff-webのfavicon追加＋提出物6文書の更新                    |
 
 ## スコープ
 
@@ -92,6 +93,17 @@ GitHub Actions（Ubuntu + Windows matrix）も同一コミットで成功済み�
   から手動でブラウザ確認・記録した。本格的なE2E基盤導入はPR-06以降で判断）
 - PostgreSQL / Prisma / Migration / 業務ドメイン実装（PR-02以降）
 
+## ラウンド3で追加した対応（受入条件の再検証）
+
+| 項目                       | 対応内容                                                                                                                                                                   | 該当ファイル                                     |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| favicon未定義によるコンソールエラーの修正 | ブラウザ表示確認の再実施で、admin-web/liff-webへの初回ナビゲーション時に`/favicon.ico`の404によるコンソールエラーが1件発生することを発見。両アプリの`index.html`に`<link rel="icon" href="data:," />`を追加して解消 | `apps/admin-web/index.html`、`apps/liff-web/index.html` |
+| 既存受入条件（clean/Windows CI/Clean Clone/ルートdev）の再検証 | ラウンド2で導入済みの対応がすべて有効であることを、コード確認・別ディレクトリへの実clone・ルート`pnpm dev`同時起動＋単発SIGINT終了・ブラウザ確認で再検証。コードの追加修正は不要と判断 | （変更なし、検証のみ）                             |
+
+再検証時点の最新コミットSHA・Clean Clone結果・ルート`pnpm dev`結果・
+ブラウザ確認結果の詳細は`TEST_RESULTS_PR01.md`「7. ラウンド3：受入条件
+の再検証結果」を参照。
+
 ## 未確認事項
 
 - **実機Windows環境での確認は未実施。** Windows CI（GitHub Actions
@@ -116,6 +128,11 @@ GitHub Actions（Ubuntu + Windows matrix）も同一コミットで成功済み�
    ローカルの個別`pnpm --filter <app> dev`検証だけでは検出できなかった
    バグであり、`PR01_FIX.md`が指摘した「ルート`pnpm dev`同時起動確認」の
    実施により初めて判明した）
+3. （ラウンド3）admin-web/liff-webへの初回ナビゲーション時、favicon未
+   定義による`/favicon.ico`の404起因でコンソールエラーが1件発生する
+   ことを発見（`index.html`に`<link rel="icon" href="data:," />`追加で
+   解消）。同一オリジンへの2回目以降のnavigationでは再現しないため、
+   ラウンド2のブラウザ確認では見落とされていた可能性が高い
 
 ## 次PRへの引継ぎ
 

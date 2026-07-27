@@ -16,7 +16,8 @@
 - クロスプラットフォーム化・Windows CI追加: `a7f02fc`
 - `.gitattributes`追加（Windows CI失敗修正）: `eacdfd3`
 - `turbo.json` concurrency追加（`pnpm dev`失敗修正）: `02fc4b9`
-- 提出物5文書（更新版）: 本コミット
+- 提出物5文書（更新版）: ラウンド2文書コミット
+- favicon追加（コンソールエラー修正）＋提出物6文書更新: 本コミット（ラウンド3）
 
 ## 前提
 
@@ -72,6 +73,19 @@ git revert a7f02fc   # clean cross-platform化 + Windows CI + README
 いずれかをrevertした場合、対応する問題（Windows CI失敗、または
 ルート`pnpm dev`起動不能）が再発することに留意し、PRを再度Draftへ戻すか、
 `OPEN_QUESTIONS_PR01.md`に理由を記録すること。
+
+### ラウンド3（favicon修正）のみをロールバックする場合
+
+`apps/admin-web/index.html`・`apps/liff-web/index.html`への
+`<link rel="icon" href="data:," />`追加のみを個別にrevertできる。
+
+```bash
+git revert <ラウンド3のコミットSHA>
+```
+
+revertした場合、admin-web/liff-webへの初回ブラウザアクセス時に
+`/favicon.ico`の404によるコンソールエラーが再発する
+（`TEST_RESULTS_PR01.md` 7.4参照）。
 
 ## ロールバックを判断する基準（11.9節に基づく）
 

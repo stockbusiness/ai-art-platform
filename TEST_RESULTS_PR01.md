@@ -270,3 +270,118 @@ $'\r'`で該当なし＝リポジトリは元々全てLFで統一されていた
 - 真のクリーン環境でのWindows Clean Clone確認（Windows CIでのcheckout
   成功が代理指標）。
 - Playwrightによるリポジトリ組み込みE2Eテスト。
+
+---
+
+## 7. ラウンド3：受入条件の再検証結果
+
+対象コミット：`e15fa00f8bb379f29d1f96fc50b762080b83decd`（作業開始時点の
+Head SHA、本ラウンドでの追加コミット前）。
+
+### 7.1 メイン作業ディレクトリでの再実行
+
+| コマンド                         | 結果                       |
+| --------------------------------- | -------------------------- |
+| `pnpm install --frozen-lockfile` | ✅ 成功                    |
+| `pnpm format:check`              | ✅ 成功（10/10 workspace） |
+| `pnpm lint`                       | ✅ 成功（13/13 task）      |
+| `pnpm typecheck`                  | ✅ 成功（13/13 task）      |
+| `pnpm test`                       | ✅ 成功（13/13 task、25 tests） |
+| `pnpm build`                      | ✅ 成功（10/10 workspace） |
+| `pnpm clean` → `pnpm build`（再） | ✅ 成功                    |
+
+### 7.2 真のClean Clone再検証（別ディレクトリへの実clone）
+
+- 作業ディレクトリとは別の一時ディレクトリへ`git clone --branch
+  feat/pr-01-monorepo-foundation --single-branch`を実行。
+- Clone直後、`node_modules`/`dist`/`.turbo`/`.env`のいずれも存在しない
+  ことを確認。
+- `corepack enable` → `pnpm install --frozen-lockfile` →
+  `format:check` → `lint` → `typecheck` → `test` → `build` → `clean`
+  → `build`（再）まで全件成功。
+- `pnpm test`内訳もメイン環境と同一（13ファイル・25件、全件成功）で
+  あることを確認。
+
+### 7.3 ルート`pnpm dev`同時起動再検証（Clean Clone環境）
+
+| アプリ    | 確認内容                                   | 結果                                                       |
+| --------- | ------------------------------------------ | ------------------------------------------------------------ |
+| admin-web | `curl http://localhost:5173/`              | ✅ 200                                                       |
+| liff-web  | `curl http://localhost:5174/`              | ✅ 200                                                       |
+| liff-web  | `curl http://localhost:5174/auth/callback` | ✅ 200                                                       |
+| liff-web  | `curl http://localhost:5174/maintenance`   | ✅ 200                                                       |
+| api       | `curl http://localhost:3000/`              | ✅ 200、`{"name":"@ai-art-platform/api","version":"0.1.0","environment":"development"}` |
+| worker    | ログ出力確認（`"msg":"worker started"`）   | ✅ 起動確認                                                  |
+
+`ps -ef`で10個の永続タスク（vite×2、tsc --watch×6、nodemon経由のapi、
+tsx watch経由のworker）すべての起動プロセスを確認。
+
+終了確認：起動時の親プロセスグループ（`setsid`で新規セッション化した
+PGID）へ単発SIGINTを送信。以降、`ps -ef`で該当プロセスが一件も残って
+いないこと、およびポート3000/5173/5174のいずれも`curl`で接続不可
+（release済み）となることを確認した。
+
+### 7.4 ブラウザ表示確認（再実施、問題発見と修正）
+
+Playwright（本セッション事前インストール済み、`/opt/pw-browsers`の
+Chromium、リポジトリのdevDependencyには追加せず）で、Clean Clone環境の
+`pnpm dev`実行中に5画面×2ビューポート（デスクトップ1280×800、モバイル
+375×667）を確認。
+
+**修正前の結果**：admin-web `/`とliff-web `/`について、各アプリへの
+初回ナビゲーション時（デスクトップビューポートで最初に検証したケース）
+にコンソールエラーが1件検出された。
+
+```text
+Failed to load resource: the server responded with a status of 404 (Not Found)
+```
+
+原因調査の結果、`apps/{admin-web,liff-web}/index.html`に
+`<link rel="icon">`が存在せず、`public/`ディレクトリも存在しないため、
+Chromiumがトップレベルナビゲーション時に`/favicon.ico`を自動リクエスト
+し、Vite dev serverがその存在しないパスに404を返していたことが判明した
+（ネットワークレベルでは`page`の`response`/`requestfailed`イベントに
+現れないブラウザ内部リクエストのため特定に追加調査を要した）。同一
+オリジンへの2回目以降のnavigationでは再発生しないため、ラウンド2の
+確認では見落とされていた可能性が高い。
+
+**対応**：両アプリの`index.html`に`<link rel="icon" href="data:," />`
+を追加し、favicon不在をブラウザへ明示してリクエスト自体を抑止した。
+
+**修正後の結果**：
+
+| URL                                   | HTTPステータス | 本文表示 | コンソールエラー | ページエラー |
+| -------------------------------------- | -------------- | -------- | ----------------- | ------------ |
+| admin-web `/`（desktop/mobile）        | 200            | ✅       | 0件               | 0件          |
+| admin-web `/unknown-route`             | 200            | ✅「Page not found.」 | 0件 | 0件          |
+| liff-web `/`（desktop/mobile）         | 200            | ✅       | 0件               | 0件          |
+| liff-web `/auth/callback`              | 200            | ✅       | 0件               | 0件          |
+| liff-web `/maintenance`                | 200            | ✅       | 0件               | 0件          |
+
+修正後の検証スクリプトは`RESULT: PASS`（全10ケース：5画面×2ビューポート
+でコンソールエラー0件・ページエラー0件・本文非空）で終了。
+
+### 7.5 混入・健全性チェック（再実施）
+
+```bash
+grep -rniE "sk-[a-z0-9]{10,}|api[_-]?key\s*=\s*['\"][a-z0-9]|password\s*=\s*['\"][^'\"]{3,}|BEGIN (RSA|EC|OPENSSH) PRIVATE KEY" \
+  --include="*.ts" --include="*.tsx" --include="*.json" --include="*.md" --include="*.env*" --include="*.yml" --include="*.html" .
+# → node_modules配下の型定義コメント（誤検出）以外に該当なし
+git status --porcelain | grep -i "\.env$"   # → none
+grep -rli "php" apps packages --include="*.ts" --include="*.tsx" --include="*.html"   # → 該当なし
+pnpm turbo run build --dry-run=json   # → 正常終了（循環依存エラーなし）
+```
+
+`packages/domain/package.json`に`dependencies`キー自体が存在せず、
+React/NestJS/Prismaへの依存がないことを確認。
+
+### 7.6 まとめ
+
+| 検証項目                       | 結果                                       |
+| ------------------------------ | ------------------------------------------ |
+| `clean`のクロスプラットフォーム化 | ✅ 既存実装で充足（`rimraf`、全10 workspace） |
+| Windows CI                     | ✅ 既存実装で充足（matrix、直近run成功）    |
+| 真のClean Clone                | ✅ 再検証済み、成功                          |
+| ルート`pnpm dev`同時起動・終了 | ✅ 再検証済み、成功                          |
+| ブラウザ表示確認               | ⚠️ 再検証で新規の軽微な問題（favicon 404によるコンソールエラー）を発見・修正し、再検証でPASSを確認 |
+| Secret／PHP／対象外機能混入    | ✅ なし                                      |
