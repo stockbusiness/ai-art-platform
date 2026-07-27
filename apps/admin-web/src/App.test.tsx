@@ -1,0 +1,16 @@
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+
+import { App } from "./App.js";
+
+describe("App", () => {
+  it("renders the admin shell heading", () => {
+    render(<App />);
+    expect(screen.getByRole("heading", { name: "AI Art Platform — Admin" })).toBeInTheDocument();
+  });
+
+  it("renders build info on the home route", () => {
+    render(<App />);
+    expect(screen.getByTestId("build-info")).toBeInTheDocument();
+  });
+});
