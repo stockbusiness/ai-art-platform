@@ -4,7 +4,16 @@
  * recursive `**`), so we generate paths up to a fixed depth instead of
  * relying on arbitrary nesting.
  */
-export const SENSITIVE_KEYS = ["password", "token", "authorization", "cookie"] as const;
+export const SENSITIVE_KEYS = [
+  "password",
+  "token",
+  "authorization",
+  "cookie",
+  "databaseUrl",
+  "databaseDirectUrl",
+  "DATABASE_URL",
+  "DATABASE_DIRECT_URL",
+] as const;
 
 const MAX_DEPTH = 3;
 

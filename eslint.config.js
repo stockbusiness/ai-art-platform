@@ -18,6 +18,7 @@ export default tseslint.config(
       "**/coverage/**",
       "**/.turbo/**",
       "**/node_modules/**",
+      "packages/database/generated/**",
       "pnpm-lock.yaml",
     ],
   },

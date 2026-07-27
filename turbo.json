@@ -27,6 +27,12 @@
       "inputs": ["src/**", "vitest.config.ts"],
       "outputs": []
     },
+    "test:integration": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "test/**", "vitest.integration.config.ts"],
+      "outputs": [],
+      "cache": false
+    },
     "format": {
       "cache": false,
       "outputs": []

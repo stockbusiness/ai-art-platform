@@ -16,10 +16,24 @@
     "test": "turbo run test",
     "format": "turbo run format",
     "format:check": "turbo run format:check",
-    "clean": "turbo run clean"
+    "clean": "turbo run clean",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f postgres",
+    "db:generate": "prisma generate --schema prisma/schema.prisma",
+    "db:validate": "prisma validate --schema prisma/schema.prisma",
+    "db:migrate:dev": "prisma migrate dev --schema prisma/schema.prisma",
+    "db:migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
+    "db:seed": "pnpm --filter @ai-art-platform/database run build && tsx prisma/seed.ts",
+    "db:studio": "prisma studio --schema prisma/schema.prisma",
+    "test:integration": "turbo run test:integration"
+  },
+  "dependencies": {
+    "@ai-art-platform/database": "workspace:*"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
+    "@prisma/client": "^5.22.0",
     "@typescript-eslint/eslint-plugin": "^8.18.1",
     "@typescript-eslint/parser": "^8.18.1",
     "eslint": "^9.17.0",
@@ -28,12 +42,21 @@
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-react-refresh": "^0.4.16",
     "prettier": "^3.4.2",
+    "prisma": "^5.22.0",
     "rimraf": "^6.0.1",
+    "tsx": "^4.19.2",
     "turbo": "^2.3.3",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.1"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["@nestjs/core", "esbuild"]
+    "onlyBuiltDependencies": [
+      "@nestjs/core",
+      "esbuild",
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma",
+      "@swc/core"
+    ]
   }
 }
