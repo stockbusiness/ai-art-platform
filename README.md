@@ -1,11 +1,12 @@
 # ai-art-platform
 
-AI Art operations platform — React/TypeScript rebuild. This PR
-(**PR-01 Repository and Monorepo Foundation**) builds only the pnpm/Turborepo
-monorepo foundation. No business features (tenants, auth, LINE, image
-generation, reservations, payments, ...) are implemented yet — see
-`OPEN_QUESTIONS_PR01.md` and the design doc
-`AI_ART_PLATFORM_REDESIGN_MASTER_PLAN_PR01.md` for what comes next.
+AI Art operations platform — React/TypeScript rebuild.
+**PR-01 (Repository and Monorepo Foundation)** built the pnpm/Turborepo
+monorepo foundation. **PR-02 (Database and Tenant Foundation)** adds
+PostgreSQL/Prisma, a local Docker dev database, and the Tenant domain
+(no Admin auth, Users, LINE, or business features yet — see
+`OPEN_QUESTIONS_PR01.md`, `OPEN_QUESTIONS_PR02.md`, and the design doc
+`AI_ART_PLATFORM_REDESIGN_MASTER_PLAN_PR01.md` for what comes next).
 
 **The legacy PHP application (`team478a/ai-art-school`) is not modified by
 this repository and is referenced only as a specification source.**
@@ -17,6 +18,10 @@ this repository and is referenced only as a specification source.**
   Corepack reads the pinned pnpm version from `package.json`'s
   `packageManager` field and installs/uses exactly that version — no manual
   `npm install -g pnpm` needed on any OS.
+- **Docker Desktop** (or another Docker Engine + Compose v2) — only needed
+  if you run `apps/api` against a real database (`pnpm db:up`). Everything
+  else (`admin-web`, `liff-web`, `worker`, and `apps/api`'s `/health`
+  endpoint) works without Docker.
 - Works the same on macOS, Linux, and Windows (PowerShell or Git Bash) — see
   "Getting started" below.
 
@@ -26,18 +31,29 @@ this repository and is referenced only as a specification source.**
 apps/
   admin-web    Admin console shell (React + TypeScript + Vite)
   liff-web     LIFF / end-user shell (React + TypeScript + Vite)
-  api          API foundation (NestJS)
+  api          API foundation (NestJS) — Tenant domain + Public Tenant Resolve
   worker       Background worker process foundation (Node)
 packages/
-  api-contracts  Shared Zod API contracts
-  domain         Framework-free domain modeling primitives
+  api-contracts  Shared Zod API contracts (incl. Tenant schemas)
+  domain         Framework-free domain modeling primitives (incl. Tenant)
+  database       Prisma Client generation/sharing (no business logic)
   ui             Minimal shared React components
-  config         Environment variable loading/validation
+  config         Environment variable loading/validation (incl. DB env)
   logger         Structured logging with secret redaction
   test-utils     Shared test helpers
+prisma/
+  schema.prisma  Source of truth for the database schema
+  migrations/    Committed SQL migrations
+  seed.ts        Idempotent seed (creates the "default" Tenant)
 docs/
-  ARCHITECTURE.md            Module boundaries and TypeScript decisions
-OPEN_QUESTIONS_PR01.md       Recorded open questions / decisions for this PR (repo root)
+  ARCHITECTURE.md                  Module boundaries and TypeScript decisions (PR-01)
+  architecture/ID_POLICY.md        Member ID format decisions (PR-02)
+  architecture/TENANT_POLICY.md    Tenant/LINE/Admin-role policy decisions (PR-02)
+  architecture/DATABASE_BOUNDARIES.md  Layering rules (PR-02)
+  database/ER_DIAGRAM_PR02.md      Entity-relationship diagram (PR-02)
+  database/MIGRATION_POLICY.md     Migration workflow and rules (PR-02)
+  development/LOCAL_DATABASE.md    Local Postgres reference (PR-02)
+OPEN_QUESTIONS_PR01.md / OPEN_QUESTIONS_PR02.md   Recorded open questions (repo root)
 ```
 
 See each app's/package's own `README.md` for its specific responsibility.
@@ -78,6 +94,66 @@ examples in this README work as-is.
 
 Press `Ctrl+C` once to stop all of them.
 
+`apps/api` boots even without a database — `/` and `/health` work either
+way. `/ready` and `/api/v1/public/tenants/:tenantKey` need a running,
+migrated, seeded database (see "Database" below).
+
+## Database
+
+`apps/api` uses PostgreSQL 16 via Prisma. Locally this runs in Docker,
+started separately from `pnpm dev`:
+
+```bash
+cp .env.example .env          # PowerShell: Copy-Item .env.example .env
+pnpm install
+pnpm db:up                    # starts Postgres 16 in Docker (docker compose)
+pnpm db:generate               # generates the Prisma Client (also required once after every `pnpm install`)
+pnpm db:migrate:dev            # applies migrations (creates one if the schema changed)
+pnpm db:seed                   # idempotent — creates/updates the "default" Tenant
+```
+
+These four `db:*` commands are identical on Windows PowerShell, macOS, and
+Linux — they only invoke `docker compose` and `prisma`, both cross-platform
+CLIs.
+
+Then start the API (`pnpm --filter @ai-art-platform/api dev`, or root
+`pnpm dev` for all four apps) and confirm:
+
+```bash
+curl http://localhost:3000/ready
+curl http://localhost:3000/api/v1/public/tenants/default
+```
+
+| Command                       | Purpose                                                                                           |
+| ----------------------------- | ------------------------------------------------------------------------------------------------- |
+| `pnpm db:up` / `pnpm db:down` | Start / stop the local Postgres container. `db:down` keeps the named volume (your data survives). |
+| `pnpm db:logs`                | Tail the Postgres container's logs.                                                               |
+| `pnpm db:generate`            | Regenerate the Prisma Client (not committed to git).                                              |
+| `pnpm db:validate`            | Validate `prisma/schema.prisma` without a database connection.                                    |
+| `pnpm db:migrate:dev`         | Create + apply a migration from schema changes (local dev only).                                  |
+| `pnpm db:migrate:deploy`      | Apply existing migrations without generating new ones (CI).                                       |
+| `pnpm db:seed`                | Idempotent seed — safe to re-run.                                                                 |
+| `pnpm db:studio`              | Open Prisma Studio (local DB browser GUI).                                                        |
+| `pnpm test:integration`       | Run `apps/api`'s DB-backed integration tests.                                                     |
+
+**⚠️ `pnpm db:migrate:dev`/`db:migrate:deploy` must never be pointed at a
+staging or production database from a developer machine.** PR-02 does not
+apply any migration to Supabase or to the legacy PHP database — see
+`docs/database/MIGRATION_POLICY.md`.
+
+To wipe your local database entirely (fresh volume):
+
+```bash
+pnpm db:down
+docker volume rm ai-art-platform_ai_art_platform_pgdata   # `docker volume ls` to confirm the exact name
+pnpm db:up
+pnpm db:migrate:dev
+pnpm db:seed
+```
+
+More detail (Prisma Studio, port conflicts, resetting, running integration
+tests without Docker): `docs/development/LOCAL_DATABASE.md`.
+
 ## Common commands
 
 ```bash
@@ -105,19 +181,25 @@ cp .env.example .env       # macOS/Linux/Git Bash
 Copy-Item .env.example .env   # PowerShell
 ```
 
-This step is optional — every app boots with working defaults (see the
-table below) even without a `.env` file.
+`admin-web`, `liff-web`, and `apps/worker` boot with working defaults even
+without a `.env` file. **`apps/api` requires `DATABASE_URL` and
+`DATABASE_DIRECT_URL`** (see "Database" above) — `.env.example`'s defaults
+already match `compose.yaml`, so copying it is enough for local
+development.
 
-| Variable    | Required | Default       | Notes                                    |
-| ----------- | -------- | ------------- | ---------------------------------------- |
-| `NODE_ENV`  | No       | `development` | One of `development`/`test`/`production` |
-| `LOG_LEVEL` | No       | `info`        | One of Pino's levels (`fatal`...`trace`) |
+| Variable              | Required (app)        | Default            | Notes                                                                   |
+| --------------------- | --------------------- | ------------------ | ----------------------------------------------------------------------- |
+| `NODE_ENV`            | No                    | `development`      | One of `development`/`test`/`production`                                |
+| `LOG_LEVEL`           | No                    | `info`             | One of Pino's levels (`fatal`...`trace`)                                |
+| `DATABASE_URL`        | Yes (`apps/api` only) | none — must be set | Runtime connection. Never sent to a browser bundle (no `VITE_` prefix). |
+| `DATABASE_DIRECT_URL` | Yes (`apps/api` only) | none — must be set | Direct (non-pooled) connection, used by `prisma migrate`.               |
 
-`apps/api` and `apps/worker` validate these at startup via
-`@ai-art-platform/config` and exit with a readable error if a value is
-invalid (e.g. `NODE_ENV=not-a-real-env`). No database, LINE, Stripe, or
-image-generation-provider variables exist yet — they are introduced by the
-PRs that implement those integrations.
+`apps/api` validates its full env (including the two DB variables) at
+startup via `@ai-art-platform/config`'s `apiEnvSchema` and exits with a
+readable error if a value is missing/invalid. Both DB variables are
+redacted if ever logged (`packages/logger`'s redaction list). No LINE,
+Stripe, or image-generation-provider variables exist yet — they are
+introduced by the PRs that implement those integrations.
 
 ## Working on an internal package
 
@@ -153,6 +235,17 @@ single app in isolation with `--filter`.)
 - **`pnpm clean` doesn't work on Windows**: it shouldn't happen — every
   `clean` script uses `rimraf` (a cross-platform Node.js package), not `rm
 -rf`. If you see a Unix-only command fail, please file an issue.
+- **`/ready` returns 503 / `apps/api` won't validate its env**: `DATABASE_URL`
+  and `DATABASE_DIRECT_URL` are required. Confirm `.env` exists (copied from
+  `.env.example`) and that `pnpm db:up` succeeded.
+- **Port 5432 already in use**: another local Postgres is already running.
+  Either stop it, or change the host port in `compose.yaml` (and the port
+  in `.env`'s `DATABASE_URL`/`DATABASE_DIRECT_URL`) — see
+  `docs/development/LOCAL_DATABASE.md`.
+  - macOS/Linux: `lsof -i :5432` to find the PID.
+  - Windows (PowerShell): `Get-NetTCPConnection -LocalPort 5432`.
+- **`pnpm db:generate` / `pnpm db:migrate:dev` fails with a connection
+  error**: Docker Desktop isn't running, or `pnpm db:up` wasn't run first.
 
 ## PR policy
 

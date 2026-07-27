@@ -10,12 +10,16 @@
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "format": "prettier --write . --ignore-path ../../.prettierignore",
     "format:check": "prettier --check . --ignore-path ../../.prettierignore",
     "clean": "rimraf dist .turbo"
   },
   "dependencies": {
+    "@ai-art-platform/api-contracts": "workspace:*",
     "@ai-art-platform/config": "workspace:*",
+    "@ai-art-platform/database": "workspace:*",
+    "@ai-art-platform/domain": "workspace:*",
     "@ai-art-platform/logger": "workspace:*",
     "@nestjs/common": "^10.4.15",
     "@nestjs/core": "^10.4.15",
@@ -24,11 +28,17 @@
     "rxjs": "^7.8.1"
   },
   "devDependencies": {
+    "@nestjs/testing": "^10.4.15",
+    "@swc/core": "^1.10.1",
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.5",
+    "@types/supertest": "^6.0.2",
     "nodemon": "^3.1.7",
+    "supertest": "^7.0.0",
+    "testcontainers": "^10.16.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.2",
+    "unplugin-swc": "^1.5.1",
     "vitest": "^2.1.8"
   },
   "ts-node": {

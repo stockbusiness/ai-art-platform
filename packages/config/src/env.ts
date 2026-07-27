@@ -18,6 +18,18 @@ export const baseEnvSchema = z.object({
 
 export type BaseEnv = z.infer<typeof baseEnvSchema>;
 
+/**
+ * Server-only environment schema (apps/api). Adds the DB connection
+ * strings introduced in PR-02. Never import this from a browser app
+ * (admin-web, liff-web) — DB URLs must never reach a client bundle.
+ */
+export const apiEnvSchema = baseEnvSchema.extend({
+  DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+  DATABASE_DIRECT_URL: z.string().min(1, "DATABASE_DIRECT_URL is required"),
+});
+
+export type ApiEnv = z.infer<typeof apiEnvSchema>;
+
 export class EnvValidationError extends Error {
   constructor(public readonly issues: z.ZodIssue[]) {
     const details = issues

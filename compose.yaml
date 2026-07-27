@@ -1,0 +1,29 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ai_art_platform
+      POSTGRES_USER: aiart
+      POSTGRES_PASSWORD: aiart_local
+      # Local-development-only credentials (see README.md, Database section).
+      # Never used for staging or production, which connect to Supabase.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      # If 5432 is already in use locally, change the host-side port here
+      # (e.g. "55432:5432") and update DATABASE_URL/DATABASE_DIRECT_URL in
+      # .env to match — see README.md, Troubleshooting.
+      - "5432:5432"
+    volumes:
+      - ai_art_platform_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aiart -d ai_art_platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  ai_art_platform_pgdata:

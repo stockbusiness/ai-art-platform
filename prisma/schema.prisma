@@ -1,0 +1,72 @@
+// PR-02: Database and Tenant Foundation.
+//
+// Only Tenant / TenantDomain / TenantSetting are modeled here. Admin/User/
+// LINE/booking/payment models are explicitly out of scope for PR-02 — see
+// docs/architecture/DATABASE_BOUNDARIES.md.
+
+generator client {
+  provider = "prisma-client-js"
+  // Generated into packages/database so the pnpm workspace's runtime code
+  // imports it from there, instead of relying on hoisting into a shared
+  // node_modules/@prisma/client that pnpm's isolated installs don't create.
+  output   = "../packages/database/generated/client"
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Runtime connection (API request path). Can point at a connection
+  // pooler (e.g. Supabase's Pooler) in staging/production.
+  url       = env("DATABASE_URL")
+  // Direct connection used for migrations, which must bypass a pooler.
+  directUrl = env("DATABASE_DIRECT_URL")
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+model Tenant {
+  id             String       @id @default(uuid()) @db.Uuid
+  tenantKey      String       @unique @map("tenant_key") @db.VarChar(50)
+  name           String       @db.VarChar(120)
+  status         TenantStatus @default(ACTIVE)
+  timezone       String       @default("Asia/Tokyo") @db.VarChar(64)
+  defaultLocale  String       @default("ja-JP") @map("default_locale") @db.VarChar(16)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  domains  TenantDomain[]
+  settings TenantSetting[]
+
+  @@map("tenants")
+}
+
+model TenantDomain {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  host      String   @unique @db.VarChar(255)
+  isPrimary Boolean  @default(false) @map("is_primary")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@map("tenant_domains")
+}
+
+model TenantSetting {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  key       String   @db.VarChar(100)
+  valueJson Json     @map("value_json")
+  isSecret  Boolean  @default(false) @map("is_secret")
+  version   Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([tenantId, key])
+  @@map("tenant_settings")
+}

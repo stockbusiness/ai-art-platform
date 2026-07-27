@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ci:
+  quality:
     name: Install, format, lint, typecheck, test, build (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -19,6 +19,13 @@ jobs:
           - ubuntu-latest
           - windows-latest
     runs-on: ${{ matrix.os }}
+    env:
+      # `prisma validate`/`generate` require DATABASE_URL/DATABASE_DIRECT_URL
+      # to resolve (schema-only check — no connection attempted), but this
+      # job never actually talks to a database. The `database` job below is
+      # the one that runs against a real, migrated Postgres.
+      DATABASE_URL: postgresql://aiart:aiart_local@localhost:5432/ai_art_platform?schema=public
+      DATABASE_DIRECT_URL: postgresql://aiart:aiart_local@localhost:5432/ai_art_platform?schema=public
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,6 +41,12 @@ jobs:
 
       - name: Install dependencies (frozen lockfile)
         run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: pnpm db:generate
+
+      - name: Validate Prisma schema
+        run: pnpm db:validate
 
       - name: Check formatting
         run: pnpm format:check
@@ -52,3 +65,63 @@ jobs:
 
       - name: Clean build outputs
         run: pnpm clean
+
+  database:
+    name: Database (migrate, seed, integration test)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: ai_art_platform
+          POSTGRES_USER: aiart
+          POSTGRES_PASSWORD: aiart_local
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aiart -d ai_art_platform"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://aiart:aiart_local@localhost:5432/ai_art_platform?schema=public
+      DATABASE_DIRECT_URL: postgresql://aiart:aiart_local@localhost:5432/ai_art_platform?schema=public
+      # Kept separate from DATABASE_URL so the integration suite (which
+      # truncates tables between tests) never touches the seeded dev data
+      # above — see section 16.5 of the PR-02 instructions.
+      TEST_DATABASE_URL: postgresql://aiart:aiart_local@localhost:5432/ai_art_platform_test?schema=public
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Create isolated integration-test database
+        run: psql -h localhost -U aiart -d ai_art_platform -c "CREATE DATABASE ai_art_platform_test;"
+        env:
+          PGPASSWORD: aiart_local
+
+      - name: Generate Prisma Client
+        run: pnpm db:generate
+
+      - name: Validate Prisma schema
+        run: pnpm db:validate
+
+      - name: Deploy migrations
+        run: pnpm db:migrate:deploy
+
+      - name: Seed
+        run: pnpm db:seed
+
+      - name: Integration test
+        run: pnpm test:integration
