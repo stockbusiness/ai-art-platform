@@ -45,15 +45,16 @@ export class InMemoryTenantRepository implements TenantRepository {
   }
 
   addTenantDomain(input: CreateTenantDomainInput): Promise<void> {
-    if (this.domainsByHost.has(input.host)) {
-      throw new TenantDomainAlreadyExistsError(`Domain "${input.host}" already exists`);
+    const host = input.host.toString();
+    if (this.domainsByHost.has(host)) {
+      throw new TenantDomainAlreadyExistsError(`Domain "${host}" already exists`);
     }
     if (input.isPrimary && this.primaryDomainByTenant.has(input.tenantId)) {
       throw new PrimaryTenantDomainAlreadyExistsError(
         `Tenant ${input.tenantId} already has a primary domain`,
       );
     }
-    this.domainsByHost.set(input.host, { tenantId: input.tenantId, isPrimary: input.isPrimary });
+    this.domainsByHost.set(host, { tenantId: input.tenantId, isPrimary: input.isPrimary });
     if (input.isPrimary) {
       this.primaryDomainByTenant.add(input.tenantId);
     }

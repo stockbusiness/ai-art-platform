@@ -1,3 +1,4 @@
+import type { TenantDomainHost } from "./tenant-domain-host.js";
 import type { TenantKey } from "./tenant-key.js";
 import type { Tenant } from "./tenant.js";
 
@@ -12,7 +13,13 @@ export const TENANT_REPOSITORY = "TENANT_REPOSITORY";
 
 export interface CreateTenantDomainInput {
   tenantId: string;
-  host: string;
+  /**
+   * A validated, normalized `TenantDomainHost` — never a raw string. This
+   * forces every caller to run the host through `TenantDomainHost.create()`
+   * before it can reach the Repository, so an unvalidated/non-normalized
+   * host can never be persisted through this port.
+   */
+  host: TenantDomainHost;
   isPrimary: boolean;
 }
 

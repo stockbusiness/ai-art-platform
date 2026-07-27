@@ -5,6 +5,7 @@ import {
   PrimaryTenantDomainAlreadyExistsError,
   Tenant,
   TenantDomainAlreadyExistsError,
+  TenantDomainHost,
   TenantKey,
   TenantKeyAlreadyExistsError,
 } from "@ai-art-platform/domain";
@@ -15,6 +16,14 @@ import { PrismaTenantRepository } from "../../src/modules/tenant/infrastructure/
 
 function aTenantKey(raw: string): TenantKey {
   const result = TenantKey.create(raw);
+  if (!result.ok) {
+    throw result.error;
+  }
+  return result.value;
+}
+
+function aHost(raw: string): TenantDomainHost {
+  const result = TenantDomainHost.create(raw);
   if (!result.ok) {
     throw result.error;
   }
@@ -84,7 +93,7 @@ describe("PrismaTenantRepository", () => {
 
     await repository.addTenantDomain({
       tenantId: tenant.id,
-      host: "acme.example.com",
+      host: aHost("acme.example.com"),
       isPrimary: false,
     });
 
@@ -97,17 +106,38 @@ describe("PrismaTenantRepository", () => {
     await repository.create(tenant);
     await repository.addTenantDomain({
       tenantId: tenant.id,
-      host: "dup.example.com",
+      host: aHost("dup.example.com"),
       isPrimary: false,
     });
 
     await expect(
       repository.addTenantDomain({
         tenantId: tenant.id,
-        host: "dup.example.com",
+        host: aHost("dup.example.com"),
         isPrimary: false,
       }),
     ).rejects.toBeInstanceOf(TenantDomainAlreadyExistsError);
+  });
+
+  it("treats hosts differing only by case as the same host", async () => {
+    const tenant = newTenant("case-domain");
+    await repository.create(tenant);
+    await repository.addTenantDomain({
+      tenantId: tenant.id,
+      host: aHost("Example.com"),
+      isPrimary: false,
+    });
+
+    await expect(
+      repository.addTenantDomain({
+        tenantId: tenant.id,
+        host: aHost("EXAMPLE.COM"),
+        isPrimary: false,
+      }),
+    ).rejects.toBeInstanceOf(TenantDomainAlreadyExistsError);
+
+    const row = await client.tenantDomain.findUnique({ where: { host: "example.com" } });
+    expect(row).not.toBeNull();
   });
 
   it("rejects a second primary domain for the same tenant", async () => {
@@ -115,14 +145,14 @@ describe("PrismaTenantRepository", () => {
     await repository.create(tenant);
     await repository.addTenantDomain({
       tenantId: tenant.id,
-      host: "primary-one.example.com",
+      host: aHost("primary-one.example.com"),
       isPrimary: true,
     });
 
     await expect(
       repository.addTenantDomain({
         tenantId: tenant.id,
-        host: "primary-two.example.com",
+        host: aHost("primary-two.example.com"),
         isPrimary: true,
       }),
     ).rejects.toBeInstanceOf(PrimaryTenantDomainAlreadyExistsError);
@@ -170,5 +200,98 @@ describe("PrismaTenantRepository", () => {
 
     const rows = await client.tenant.findMany({ where: { tenantKey: "default" } });
     expect(rows).toHaveLength(1);
+  });
+
+  describe("DB-level CHECK constraints (bypassing the domain layer via raw SQL)", () => {
+    const POSTGRES_CHECK_VIOLATION = "23514";
+    // Postgres's own VARCHAR(n) length limit ("string data right
+    // truncation") — a 51-character tenant_key is rejected by the column
+    // type itself before the CHECK constraint's regex is ever evaluated.
+    const POSTGRES_STRING_TOO_LONG = "22001";
+
+    /**
+     * Asserts the insert was rejected specifically by a Postgres CHECK
+     * constraint (SQLSTATE 23514) — not by some unrelated failure (a type
+     * mismatch, a missing column, ...) that `.rejects.toThrow()` alone
+     * would not distinguish from an actual constraint violation.
+     */
+    async function expectCheckViolation(promise: Promise<unknown>): Promise<void> {
+      await expect(promise).rejects.toMatchObject({
+        meta: { code: POSTGRES_CHECK_VIOLATION },
+      });
+    }
+
+    /** Same as expectCheckViolation, but also accepts a column-length rejection. */
+    async function expectRejectedByDbConstraint(promise: Promise<unknown>): Promise<void> {
+      let sqlstate: unknown;
+      try {
+        await promise;
+      } catch (error: unknown) {
+        sqlstate = (error as { meta?: { code?: unknown } }).meta?.code;
+        expect([POSTGRES_CHECK_VIOLATION, POSTGRES_STRING_TOO_LONG]).toContain(sqlstate);
+        return;
+      }
+      throw new Error("Expected the insert to be rejected, but it succeeded");
+    }
+
+    async function rawInsertTenant(tenantKey: string, name = "Raw Insert Test"): Promise<unknown> {
+      return client.$executeRawUnsafe(
+        `INSERT INTO "tenants" (id, tenant_key, name, status, timezone, default_locale, updated_at)
+         VALUES (gen_random_uuid(), $1, $2, 'ACTIVE', 'Asia/Tokyo', 'ja-JP', now())`,
+        tenantKey,
+        name,
+      );
+    }
+
+    it.each([
+      ["ab", "too short (2 chars)"],
+      ["Default", "contains uppercase"],
+      ["-default", "leading hyphen"],
+      ["default-", "trailing hyphen"],
+      ["default_key", "invalid character (underscore)"],
+    ])("rejects tenant_key = %s (%s) at the database level", async (invalidKey) => {
+      await expectCheckViolation(rawInsertTenant(invalidKey));
+    });
+
+    it("rejects a tenant_key over 50 characters at the database level", async () => {
+      await expectRejectedByDbConstraint(rawInsertTenant("a".repeat(51)));
+    });
+
+    it("accepts a valid tenant_key at the database level", async () => {
+      await expect(rawInsertTenant("valid-key")).resolves.toBeDefined();
+    });
+
+    it.each([
+      ["", "empty"],
+      ["   ", "whitespace-only"],
+    ])("rejects tenant name = %j (%s) at the database level", async (invalidName) => {
+      await expectCheckViolation(rawInsertTenant("name-check-target", invalidName));
+    });
+
+    async function rawInsertTenantDomain(host: string): Promise<unknown> {
+      const tenant = newTenant(`host-check-${randomUUID().slice(0, 8)}`);
+      await repository.create(tenant);
+      return client.$executeRawUnsafe(
+        `INSERT INTO "tenant_domains" (id, tenant_id, host, is_primary, updated_at)
+         VALUES (gen_random_uuid(), $1::uuid, $2, false, now())`,
+        tenant.id,
+        host,
+      );
+    }
+
+    it.each([
+      ["Example.com", "contains uppercase"],
+      ["https://example.com", "contains a scheme"],
+      ["example.com/path", "contains a path"],
+      ["example.com:8080", "contains a port"],
+      ["", "empty"],
+      ["exa mple.com", "contains a space"],
+    ])("rejects tenant_domains.host = %j (%s) at the database level", async (invalidHost) => {
+      await expectCheckViolation(rawInsertTenantDomain(invalidHost));
+    });
+
+    it("accepts a valid tenant_domains.host at the database level", async () => {
+      await expect(rawInsertTenantDomain("valid-host.example.com")).resolves.toBeDefined();
+    });
   });
 });

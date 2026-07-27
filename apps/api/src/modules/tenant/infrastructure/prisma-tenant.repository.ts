@@ -69,13 +69,15 @@ export class PrismaTenantRepository implements TenantRepository {
       await this.prisma.client.tenantDomain.create({
         data: {
           tenantId: input.tenantId,
-          host: input.host,
+          host: input.host.toString(),
           isPrimary: input.isPrimary,
         },
       });
     } catch (error: unknown) {
       if (isUniqueConstraintViolation(error, "host")) {
-        throw new TenantDomainAlreadyExistsError(`Domain "${input.host}" already exists`);
+        throw new TenantDomainAlreadyExistsError(
+          `Domain "${input.host.toString()}" already exists`,
+        );
       }
       // The Primary Domain constraint is a partial unique index added by
       // raw SQL in the migration (Prisma can't express it in schema.prisma

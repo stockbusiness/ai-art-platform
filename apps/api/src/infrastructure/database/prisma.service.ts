@@ -1,18 +1,17 @@
 import { createPrismaClient, type PrismaClient } from "@ai-art-platform/database";
-import { Injectable, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
+import { Injectable, type OnModuleDestroy } from "@nestjs/common";
 
 /**
- * Owns the PrismaClient connect/disconnect lifecycle for the whole app.
- * packages/database only knows how to construct a client — this is the
- * one place that decides when to connect and disconnect it.
+ * Owns the PrismaClient lifecycle for the whole app. Deliberately does
+ * *not* eagerly connect on module init: Prisma connects lazily on the
+ * first query, so the app boots (and `GET /health` responds) even when
+ * the database is unreachable. Only `GET /ready` (and any other route
+ * that actually queries) fails while the database is down — see
+ * ReadyController.
  */
 @Injectable()
-export class PrismaService implements OnModuleInit, OnModuleDestroy {
+export class PrismaService implements OnModuleDestroy {
   readonly client: PrismaClient = createPrismaClient();
-
-  async onModuleInit(): Promise<void> {
-    await this.client.$connect();
-  }
 
   async onModuleDestroy(): Promise<void> {
     await this.client.$disconnect();

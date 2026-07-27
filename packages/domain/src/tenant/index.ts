@@ -1,7 +1,9 @@
+export { InvalidTenantDomainHostError, TenantDomainHost } from "./tenant-domain-host.js";
 export { InvalidTenantKeyError, TenantKey } from "./tenant-key.js";
 export { canTransitionTenantStatus, TENANT_STATUSES } from "./tenant-status.js";
 export type { TenantStatus } from "./tenant-status.js";
 export {
+  InvalidTenantNameError,
   PrimaryTenantDomainAlreadyExistsError,
   TenantDomainAlreadyExistsError,
   TenantKeyAlreadyExistsError,

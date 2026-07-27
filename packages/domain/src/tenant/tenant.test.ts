@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { TenantStatusTransitionError } from "./tenant-errors.js";
+import { InvalidTenantNameError, TenantStatusTransitionError } from "./tenant-errors.js";
 import { TenantKey } from "./tenant-key.js";
 import { Tenant } from "./tenant.js";
 
@@ -92,6 +92,70 @@ describe("Tenant", () => {
 
     expect(tenant.name).toBe("New");
     expect(tenant.updatedAt).toEqual(later);
+  });
+
+  it("rejects creating a tenant with an empty name", () => {
+    expect(() =>
+      Tenant.create({ id: "t1", tenantKey: aTenantKey(), name: "", now: new Date() }),
+    ).toThrow(InvalidTenantNameError);
+  });
+
+  it("rejects creating a tenant with a whitespace-only name", () => {
+    expect(() =>
+      Tenant.create({ id: "t1", tenantKey: aTenantKey(), name: "   ", now: new Date() }),
+    ).toThrow(InvalidTenantNameError);
+  });
+
+  it("rejects creating a tenant with a name over 120 characters", () => {
+    expect(() =>
+      Tenant.create({ id: "t1", tenantKey: aTenantKey(), name: "a".repeat(121), now: new Date() }),
+    ).toThrow(InvalidTenantNameError);
+  });
+
+  it("accepts a name at exactly the 120-character limit", () => {
+    const tenant = Tenant.create({
+      id: "t1",
+      tenantKey: aTenantKey(),
+      name: "a".repeat(120),
+      now: new Date(),
+    });
+    expect(tenant.name).toHaveLength(120);
+  });
+
+  it("accepts a single-character name", () => {
+    const tenant = Tenant.create({ id: "t1", tenantKey: aTenantKey(), name: "a", now: new Date() });
+    expect(tenant.name).toBe("a");
+  });
+
+  it("rejects renaming to an empty name", () => {
+    const tenant = Tenant.create({
+      id: "t1",
+      tenantKey: aTenantKey(),
+      name: "Valid",
+      now: new Date(),
+    });
+    expect(() => tenant.rename("", new Date())).toThrow(InvalidTenantNameError);
+    expect(tenant.name).toBe("Valid");
+  });
+
+  it("rejects renaming to a whitespace-only name", () => {
+    const tenant = Tenant.create({
+      id: "t1",
+      tenantKey: aTenantKey(),
+      name: "Valid",
+      now: new Date(),
+    });
+    expect(() => tenant.rename("   ", new Date())).toThrow(InvalidTenantNameError);
+  });
+
+  it("rejects renaming to a name over 120 characters", () => {
+    const tenant = Tenant.create({
+      id: "t1",
+      tenantKey: aTenantKey(),
+      name: "Valid",
+      now: new Date(),
+    });
+    expect(() => tenant.rename("a".repeat(121), new Date())).toThrow(InvalidTenantNameError);
   });
 
   it("reconstitutes from persisted props without validating business rules", () => {

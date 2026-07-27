@@ -1,8 +1,21 @@
 import { Entity } from "../entity.js";
 
-import { TenantStatusTransitionError } from "./tenant-errors.js";
+import { InvalidTenantNameError, TenantStatusTransitionError } from "./tenant-errors.js";
 import type { TenantKey } from "./tenant-key.js";
 import { canTransitionTenantStatus, type TenantStatus } from "./tenant-status.js";
+
+const MAX_NAME_LENGTH = 120;
+
+function assertValidTenantName(name: string): void {
+  if (name.length === 0 || name.trim().length === 0) {
+    throw new InvalidTenantNameError("Tenant name must not be empty or whitespace-only");
+  }
+  if (name.length > MAX_NAME_LENGTH) {
+    throw new InvalidTenantNameError(
+      `Tenant name must be at most ${MAX_NAME_LENGTH} characters (got ${name.length})`,
+    );
+  }
+}
 
 export interface TenantProps {
   id: string;
@@ -33,6 +46,7 @@ export class Tenant extends Entity<string> {
   }
 
   static create(input: CreateTenantInput): Tenant {
+    assertValidTenantName(input.name);
     return new Tenant({
       id: input.id,
       tenantKey: input.tenantKey,
@@ -83,6 +97,7 @@ export class Tenant extends Entity<string> {
   }
 
   rename(name: string, now: Date): void {
+    assertValidTenantName(name);
     this.props.name = name;
     this.props.updatedAt = now;
   }

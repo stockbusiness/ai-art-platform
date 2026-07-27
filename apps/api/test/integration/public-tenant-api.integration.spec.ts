@@ -24,6 +24,13 @@ describe("Public Tenant API", () => {
   });
 
   beforeEach(async () => {
+    // Delete child rows first — tenant_domains/tenant_settings have an
+    // ON DELETE RESTRICT foreign key to tenants (section 8.4), so a
+    // leftover row from another spec file sharing this database (Vitest's
+    // integration config runs files sequentially, not in isolated
+    // databases) would otherwise block this cleanup.
+    await client.tenantSetting.deleteMany();
+    await client.tenantDomain.deleteMany();
     await client.tenant.deleteMany();
   });
 

@@ -61,3 +61,28 @@ ALTER TABLE "tenant_settings" ADD CONSTRAINT "tenant_settings_tenant_id_fkey" FO
 -- added here explicitly: at most one Primary Domain per Tenant (section 8.4
 -- of the PR-02 instructions). Non-primary domains are unaffected.
 CREATE UNIQUE INDEX "tenant_domains_tenant_id_primary_key" ON "tenant_domains"("tenant_id") WHERE "is_primary" = true;
+
+-- AddCheckConstraint
+-- Mirrors packages/domain's TenantKey.create() validation (section 9.1 of
+-- the PR-02 instructions) at the database level, so a caller that bypasses
+-- the domain layer (a raw INSERT, a future admin script, etc.) still
+-- cannot store an invalid tenant_key: 3-50 lowercase alphanumeric
+-- characters or hyphens, no leading/trailing hyphen.
+ALTER TABLE "tenants" ADD CONSTRAINT "tenants_tenant_key_format_check"
+  CHECK ("tenant_key" ~ '^[a-z0-9]([a-z0-9-]{1,48})[a-z0-9]$');
+
+-- AddCheckConstraint
+-- `name` must not be empty or whitespace-only. The 120-character upper
+-- bound is already enforced by the VARCHAR(120) column type.
+ALTER TABLE "tenants" ADD CONSTRAINT "tenants_name_not_blank_check"
+  CHECK (length(btrim("name")) > 0);
+
+-- AddCheckConstraint
+-- `host` must be a bare, lowercase, multi-label hostname: no scheme
+-- (`://`), no path (`/`), no port (`:port`), no uppercase, no empty
+-- string. This is a database-level backstop for
+-- packages/domain/src/tenant/tenant-domain-host.ts's normalization/
+-- validation — a raw INSERT bypassing the domain layer cannot store an
+-- invalid or non-normalized host either.
+ALTER TABLE "tenant_domains" ADD CONSTRAINT "tenant_domains_host_format_check"
+  CHECK ("host" ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$');

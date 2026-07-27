@@ -14,6 +14,10 @@ export class TenantKeyAlreadyExistsError extends DomainError {
   readonly code = "TENANT_KEY_ALREADY_EXISTS";
 }
 
+export class InvalidTenantNameError extends DomainError {
+  readonly code = "TENANT_NAME_INVALID";
+}
+
 export class TenantStatusTransitionError extends DomainError {
   readonly code = "TENANT_STATUS_TRANSITION_INVALID";
 
