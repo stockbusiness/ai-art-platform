@@ -79,3 +79,38 @@
   `.prettierignore`/`eslint.config.js`へ除外を追加して解消した。
 - 次PRへの引継ぎ：他のコード生成ツール（OpenAPI Client等）を導入する
   場合も、同様に生成物ディレクトリを両ファイルへ除外登録すること。
+
+## 7. 追加修正ラウンド（コミット`e32338b`）で決着した4件（記録）
+
+PR #2への追加レビュー指摘4件について、本書冒頭で列挙した「PR-02でも
+未決のまま残す内容」（Supabase実プロジェクト情報等）とは異なり、いずれも
+本PRのスコープ内で実装レベルの決着がついた。詳細は
+`IMPLEMENTATION_HISTORY_PR02.md`「追加修正ラウンド」節を参照。
+
+- **DB停止時のAPI起動可否**：`PrismaService`の`$connect()`強制呼び出しを
+  削除し決着。次PRへの引継ぎなし（設計が確定）。
+- **Tenant Key／Tenant name／TenantDomain hostのDB CHECK制約**：3件とも
+  Migration SQLへ追加し決着。既存の未staging適用Migrationへ直接追記した
+  （新規Migrationを起こしていない）。次PRへの引継ぎ：将来別のTenant
+  関連カラムを追加する際も、Domain層の検証ルールをDB CHECK制約として
+  ミラーする方針を踏襲すること。
+- **TenantDomain hostの正規化**：`TenantDomainHost` Value Objectとして
+  決着。`TenantRepository`の型シグネチャ変更により、Repositoryが
+  未検証の生文字列を受け取れない構造とした。
+
+## 8. TenantDomainHostのUNIQUE制約は大文字小文字を区別する点（記録）
+
+- `tenant_domains.host`のDB `UNIQUE`制約自体は文字列としての完全一致で
+  判定されるため、大文字小文字を区別する。「大文字小文字を同一視した
+  重複拒否」は、`TenantDomainHost.create()`が入力を必ず小文字へ
+  正規化してからRepositoryへ渡す、というDomain層の振る舞いに依存して
+  実現している。
+- 一方、DB側の`tenant_domains_host_format_check`は大文字を含む値自体を
+  拒否するため、Domain層をバイパスするRaw SQL経由であっても
+  正規化されていない（大文字を含む）値がDBへ到達することはない。
+  結果として、CHECK制約とDomain層の正規化を組み合わせることで、
+  実質的に大文字小文字を区別しないUNIQUE性が保たれている。
+- 次PRへの引継ぎ：将来PostgreSQLの`citext`型や関数インデックス
+  （`UNIQUE (lower(host))`）への切り替えを検討する余地はあるが、
+  PR-02時点では上記の組み合わせで要件を満たすと判断し、あえて
+  導入していない。

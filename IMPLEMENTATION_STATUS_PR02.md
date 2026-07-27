@@ -20,7 +20,28 @@ https://github.com/stockbusiness/ai-art-platform/pull/2
 | -------------- | ----------------------------------------------------------------------------------------- |
 | `eef7ed7`      | PR-02本体実装（Prisma/DB基盤、Tenant Domain、Public Tenant Resolve等）                    |
 | `4a39ef2`      | CI修正（Quality jobのDATABASE_URL不足、turbo strict env modeによるTEST_DATABASE_URL欠落） |
-| （本コミット） | 提出物7文書の追加                                                                         |
+| `3322f94`      | 提出物7文書の追加                                                                         |
+| `e32338b`      | 追加修正4件（DB停止時起動、Tenant Key/name/Domain host のDB CHECK制約とDomain検証強化）   |
+| （本コミット） | 追加修正4件に対応した提出物7文書の更新                                                    |
+
+## 追加修正4件（本ラウンド、コミット`e32338b`）
+
+ユーザーからの4件の追加指摘に対応した。詳細は
+`IMPLEMENTATION_HISTORY_PR02.md`「追加修正ラウンド」節を参照。
+
+| #   | 指摘内容                                   | 対応                                                                                                                                                                                                                                                                                                                                                                    |
+| --- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | DB停止時もAPIプロセスを起動可能にする      | `PrismaService.onModuleInit()`の強制`$connect()`を削除（Prismaは初回クエリで遅延接続）。`GET /health`はDB停止時も200、`GET /ready`は503。フルNestJSアプリ起動の統合テストで検証（`apps/api/test/integration/db-down.integration.spec.ts`、4件）。                                                                                                                       |
+| 2   | Tenant KeyのDB CHECK制約を追加する         | `tenants_tenant_key_format_check`をMigration SQLへ追加（3-50文字、小文字英数字とハイフンのみ、先頭・末尾ハイフン禁止）。Raw SQL直接INSERTで制約自体を検証する統合テストを追加。                                                                                                                                                                                         |
+| 3   | Tenant Domain hostの正規化・検証を追加する | `packages/domain/src/tenant/tenant-domain-host.ts`に`TenantDomainHost` Value Objectを新規追加（小文字化・スキーム/パス/ポート/空文字禁止・大文字小文字を同一視するUNIQUE）。`TenantRepository`の`addTenantDomain`は`TenantDomainHost`型のみ受け付ける設計とし、未検証の生文字列がRepositoryへ到達できない構造にした。DB側にも`tenant_domains_host_format_check`を追加。 |
+| 4   | Tenant nameの制約を追加する                | `Tenant.create()`/`Tenant.rename()`両方で1〜120文字・空文字禁止・空白のみ禁止を強制（`assertValidTenantName`）。DB側にも`tenants_name_not_blank_check`を追加（上限120文字は既存の`VARCHAR(120)`型制約で担保）。                                                                                                                                                         |
+
+このラウンドで、検証中に3件の潜在バグを自己発見・修正した（詳細は
+`IMPLEMENTATION_HISTORY_PR02.md`参照）：Raw SQLテストヘルパーのUUID型
+キャスト漏れ、51文字tenant_keyが期待と異なるSQLSTATE（`22001`）で
+拒否される点、および複数の統合テストファイルが同一DBを順次共有する
+構成下での`public-tenant-api.integration.spec.ts`の`beforeEach`外部キー
+違反。
 
 ## スコープ
 
@@ -48,8 +69,9 @@ User、LINE、共通ID、代理店、予約、画像生成、決済等は一切�
 
 ## 実行コマンドと結果
 
-すべて本ブランチのコミット `4a39ef2c68e6d1aea7a379565b34e6a779b2ead6` に対し、
-真のClean Clone環境で検証済み（詳細は `TEST_RESULTS_PR02.md`）。
+すべて本ブランチのコミット `e32338b5c4d2e78017de4ad4d915b10484c5f53f`
+（追加修正4件）に対し、真のClean Clone環境で再検証済み（詳細は
+`TEST_RESULTS_PR02.md`）。
 
 ```bash
 corepack enable
@@ -59,18 +81,18 @@ pnpm db:validate                 # 成功（DATABASE_URL等はQuality jobでは�
 pnpm format:check                # 成功
 pnpm lint                        # 成功
 pnpm typecheck                   # 成功
-pnpm test                        # 成功（71テスト、25ファイル）
+pnpm test                        # 成功（91テスト、26ファイル）
 pnpm build                       # 成功（11/11 workspace）
 pnpm clean && pnpm build         # 成功
 
 # Databaseあり環境
 pnpm db:migrate:deploy           # 成功（空DBへ適用・2回目は no-op）
-pnpm db:seed                     # 成功（冪等）
-pnpm test:integration            # 成功（16テスト、3ファイル）
+pnpm db:seed                     # 成功（冪等、×2実行後もdefault行1件）
+pnpm test:integration            # 成功（37テスト、4ファイル）
 ```
 
 CI実行結果（Ubuntu Quality / Windows Quality / Database job）は
-`TEST_RESULTS_PR02.md` に記載（本コミット時点でCI完了を確認済み）。
+`TEST_RESULTS_PR02.md` に記載（コミット`e32338b`に対するCI完了を確認済み）。
 
 ## 未実施項目
 
@@ -95,6 +117,16 @@ CI実行結果（Ubuntu Quality / Windows Quality / Database job）は
   代理指標があるが、完全な代替ではない）。
 - staging Supabase固有の挙動（Pooler接続とDirect接続の切替等）は
   未検証（PR-02のスコープ外）。
+- 追加したCHECK制約（`tenants_tenant_key_format_check`、
+  `tenants_name_not_blank_check`、`tenant_domains_host_format_check`）を、
+  staging Supabaseへ実際に適用した場合の挙動（本PRでは一切適用していない
+  ため未検証。将来適用時は既存データが制約に違反していないことの事前
+  確認が必要）。
+- Windows runner上での本ラウンド（コミット`e32338b`）の統合テスト
+  （`db-down.integration.spec.ts`含む）実機実行はCI（`database` job、
+  Ubuntuのみ）でのみ確認しており、Windows実機では未確認
+  （Quality jobはWindowsでも実行されるが、DBサービスコンテナを持たない
+  ため統合テストの対象外）。
 
 ## 発生した問題（と対応）
 
@@ -118,6 +150,17 @@ CI実行結果（Ubuntu Quality / Windows Quality / Database job）は
    Raw SQLで追加した部分一意インデックス（Primary Domain制約）に対しては
    カラム名（`tenant_id`）のみを返すことが判明し、当初の判定ロジックの
    誤りを修正した。
+6. （追加修正ラウンド）Raw SQL統合テストで`tenant_id`カラムへ型キャスト
+   なしで文字列を渡し`uuid`型ミスマッチ（Postgres `42804`）を起こして
+   いた点を`::uuid`キャストで修正。
+7. （追加修正ラウンド）51文字のtenant_keyはCHECK制約（SQLSTATE `23514`）
+   ではなく`VARCHAR(50)`列型自体（SQLSTATE `22001`）で先に拒否される
+   ことが判明し、テストの期待値を実際の拒否経路に合わせて修正。
+8. （追加修正ラウンド）`public-tenant-api.integration.spec.ts`の
+   `beforeEach`が`tenants`テーブルのみを削除しており、同一統合テストDBを
+   順次共有する他のspecファイルが残した`tenant_domains`行により
+   `ON DELETE RESTRICT`外部キー違反が発生していた。子テーブルから先に
+   削除する順序へ修正。
 
 ## 次PRへの引継ぎ
 

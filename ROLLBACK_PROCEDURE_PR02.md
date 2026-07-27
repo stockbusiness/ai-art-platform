@@ -13,7 +13,9 @@
 - Base（`main`、PR-01マージ済み）: `d249280cc45aa8466018180e9a28cded79542191`
 - PR-02本体実装: `eef7ed77749e140e07c22aec8946ed0f5a4543d0`
 - CI修正（DATABASE_URL／turbo env）: `4a39ef2c68e6d1aea7a379565b34e6a779b2ead6`
-- 提出物7文書: 本コミット
+- 提出物7文書（初回）: `3322f94d9e33c2907b2e4ba404bccbfd52f4ad2d`
+- 追加修正4件（DB停止時起動、Tenant Key/name/Domain hostのDB CHECK制約）: `e32338b5c4d2e78017de4ad4d915b10484c5f53f`
+- 追加修正4件に対応した提出物7文書の更新: 本コミット
 
 ## 前提
 
@@ -70,6 +72,21 @@ git revert 4a39ef2   # CI修正（DATABASE_URL／turbo env）のみを戻す
 `test:integration`がTestcontainersへ意図せずフォールバックする不具合が
 再発する（`IMPLEMENTATION_HISTORY_PR02.md`参照）。
 
+追加修正コミット（`e32338b`）も同様に単体でrevert可能（後続コミットが
+存在しないため）。
+
+```bash
+git revert e32338b   # 追加修正4件（DB停止時起動、CHECK制約3件、
+                      # TenantDomainHost、Tenant name制約）をまとめて戻す
+```
+
+ただしこれを行うと、DB CHECK制約3件が未staging適用のMigration SQLから
+削除される（`prisma migrate reset`で再適用しない限りローカル/CI用DBには
+既に適用済みの制約が残るため、必要ならローカルDBも
+`prisma migrate reset`で作り直すこと）。また`PrismaService`が再び
+`onModuleInit()`で`$connect()`する挙動に戻り、DB停止時にAPIプロセスが
+起動できなくなる（`GET /health`も含めて）点に注意。
+
 本体実装（`eef7ed7`）単体のrevertは推奨しない（Migration・Domain・API
 すべてに依存関係があり、部分revertはスキーマ不整合を招くため）。PR-02
 全体を対象としたrevertを行うこと。
@@ -81,7 +98,8 @@ Migration（`20260727101006_pr02_tenant_foundation`）をDBから取り除く
 必要が生じた場合の手動SQL：
 
 ```sql
--- 依存関係の逆順で削除
+-- 依存関係の逆順で削除（CHECK制約はテーブルの一部のため、
+-- テーブルごとDROPすれば個別のDROP CONSTRAINTは不要）
 DROP TABLE IF EXISTS "tenant_settings";
 DROP TABLE IF EXISTS "tenant_domains";
 DROP TABLE IF EXISTS "tenants";
@@ -117,6 +135,12 @@ DELETE FROM "_prisma_migrations" WHERE migration_name = '20260727101006_pr02_ten
 - Primary Domain重複を許す（本PRでは repository/integration testで検証済み）
 - 無認証のTenant作成・更新APIが公開されている（本PRでは非公開）
 - PR-03以降の機能が混入する（本PRでは混入なしを確認済み）
+- DB停止時にAPIプロセス自体が起動できない（本PRでは`GET /health`が
+  DB停止時も200を返すことを`db-down.integration.spec.ts`で検証済み）
+- Domain層をバイパスするRaw SQL経由の書き込みで、不正なtenant_key・
+  空/空白のみのname・不正なtenant_domains.hostがDBへ格納できてしまう
+  （本PRでは3件のDB CHECK制約＋Raw SQL直接INSERTによる統合テストで
+  検証済み）
 - staging／productionへ無断Migrationする（本PRでは一切実施していない）
 - 既存PHP DBへ影響する（本PRでは接続すらしていない）
 
