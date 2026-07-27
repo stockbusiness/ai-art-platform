@@ -19,6 +19,13 @@ jobs:
           - ubuntu-latest
           - windows-latest
     runs-on: ${{ matrix.os }}
+    env:
+      # `prisma validate`/`generate` require DATABASE_URL/DATABASE_DIRECT_URL
+      # to resolve (schema-only check — no connection attempted), but this
+      # job never actually talks to a database. The `database` job below is
+      # the one that runs against a real, migrated Postgres.
+      DATABASE_URL: postgresql://aiart:aiart_local@localhost:5432/ai_art_platform?schema=public
+      DATABASE_DIRECT_URL: postgresql://aiart:aiart_local@localhost:5432/ai_art_platform?schema=public
     steps:
       - name: Checkout
         uses: actions/checkout@v4
