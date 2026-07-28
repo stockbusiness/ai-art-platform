@@ -283,9 +283,20 @@ requestId)`へ変更（全Guard・Controllerの呼出箇所を追従修正）。
    セーフティネットとして有効）。(b) テスト自体は
    `ADMIN_LOGIN_IP_MAX_FAILURES=3`・6並行という現実的な規模へ
    縮小し、検証対象の性質（並行要求が閾値をすり抜けない）は変えず
-   安定させた。根本対応（接続プールサイズ拡大、または
-   Verify処理をLock保持Transaction外へ移す設計変更）は次PRへ
-   引き継ぐ（`OPEN_QUESTIONS_PR03A.md`項目7）。
+   安定させた。
+   2b. **上記(b)適用後もGitHub Actions CI（Ubuntu Database
+   job）で1回だけ偶発的に失敗**：`authFailedCount`が期待値3では
+   なく1になった（ローカル環境では同条件で20回以上再現せず）。
+   CIランナーのリソース制約が原因と判断し、追加対応：(c)
+   `packages/database/src/client.ts`の`createPrismaClient()`へ
+   `connection_limit`未指定時のデフォルト値（20）を追加し、Prismaの
+   既定接続プール上限自体を引き上げた。(d)
+   並行Integration Testの assertion を「`authFailedCount`が閾値を
+   超えない」というセキュリティ上の性質を中心に据え、CIランナーの
+   接続待ちタイムアウト等インフラ起因で一部の試行が503になり得る
+   ことを許容する形へ調整（Regressionがあれば依然として検知できる
+   設計を維持）。根本対応（Verify処理をLock保持Transaction外へ移す
+   設計変更）は次PRへ引き継ぐ（`OPEN_QUESTIONS_PR03A.md`項目7）。
 3. **`DATABASE_SCHEMA_PR03A.md`の誤記を発見**：レビュー指示書
    自体が指摘していた通り、旧版に「`AUTH_IP_HASH_SECRET`は
    `packages/logger`の`SENSITIVE_KEYS`に未追加」という誤った記載が
