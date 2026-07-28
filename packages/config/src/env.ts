@@ -19,13 +19,38 @@ export const baseEnvSchema = z.object({
 export type BaseEnv = z.infer<typeof baseEnvSchema>;
 
 /**
+ * Coerces a numeric env var with a fallback default, rejecting non-numeric
+ * or non-positive values instead of silently falling back to the default
+ * for a typo'd value.
+ */
+function positiveIntEnv(defaultValue: number) {
+  return z.coerce.number().int().positive().default(defaultValue);
+}
+
+/**
  * Server-only environment schema (apps/api). Adds the DB connection
- * strings introduced in PR-02. Never import this from a browser app
- * (admin-web, liff-web) — DB URLs must never reach a client bundle.
+ * strings introduced in PR-02, plus the PR-03A Admin Authentication /
+ * Session / RBAC configuration (section 10). Never import this from a
+ * browser app (admin-web, liff-web) — DB URLs and AUTH_IP_HASH_SECRET
+ * must never reach a client bundle.
  */
 export const apiEnvSchema = baseEnvSchema.extend({
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
   DATABASE_DIRECT_URL: z.string().min(1, "DATABASE_DIRECT_URL is required"),
+  // Exact-match CORS origin for apps/admin-web — never a wildcard
+  // (section 10: "ADMIN_WEB_ORIGINをExact Match, wildcard禁止").
+  ADMIN_WEB_ORIGIN: z.string().min(1, "ADMIN_WEB_ORIGIN is required"),
+  // 8 hours, matching the fixed Session Cookie Max-Age (section 3.4).
+  ADMIN_SESSION_TTL_SECONDS: positiveIntEnv(8 * 60 * 60),
+  // Rolling window for the IP-level login rate limit (section 3.5).
+  ADMIN_LOGIN_WINDOW_SECONDS: positiveIntEnv(15 * 60),
+  ADMIN_LOGIN_ACCOUNT_MAX_FAILURES: positiveIntEnv(5),
+  ADMIN_LOGIN_IP_MAX_FAILURES: positiveIntEnv(20),
+  ADMIN_LOCKOUT_SECONDS: positiveIntEnv(15 * 60),
+  // HMAC-SHA256 key for hashing IP addresses, User-Agents, and emails
+  // before they are ever written to admin_sessions/admin_login_events
+  // (section 3.5/4.3/4.4) — never logged, never sent to a browser app.
+  AUTH_IP_HASH_SECRET: z.string().min(16, "AUTH_IP_HASH_SECRET must be at least 16 characters"),
 });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;

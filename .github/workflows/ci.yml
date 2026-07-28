@@ -90,6 +90,11 @@ jobs:
       # truncates tables between tests) never touches the seeded dev data
       # above — see section 16.5 of the PR-02 instructions.
       TEST_DATABASE_URL: postgresql://aiart:aiart_local@localhost:5432/ai_art_platform_test?schema=public
+      # PR-03A admin-auth config (section 10) — ApiConfigModule's factory
+      # requires these, and every integration test that bootstraps
+      # AppModule (via createTestApp()) goes through it.
+      ADMIN_WEB_ORIGIN: http://localhost:5173
+      AUTH_IP_HASH_SECRET: ci-only-secret-never-used-outside-this-job
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -117,11 +122,34 @@ jobs:
       - name: Validate Prisma schema
         run: pnpm db:validate
 
-      - name: Deploy migrations
+      - name: Deploy migrations (PR-02 + PR-03A)
+        run: pnpm db:migrate:deploy
+
+      - name: Re-deploy migrations (idempotency check)
         run: pnpm db:migrate:deploy
 
       - name: Seed
         run: pnpm db:seed
 
-      - name: Integration test
+      - name: Bootstrap CLI — create the first SUPER_ADMIN (section 11/14)
+        run: pnpm admin:bootstrap
+        env:
+          BOOTSTRAP_ADMIN_EMAIL: ci-bootstrap-root@example.com
+          BOOTSTRAP_ADMIN_PASSWORD: ci-bootstrap-password-123
+          BOOTSTRAP_ADMIN_NAME: CI Bootstrap Root
+          BOOTSTRAP_ADMIN_ROLE: SUPER_ADMIN
+
+      - name: Bootstrap CLI — rejects a duplicate admin
+        run: |
+          if pnpm admin:bootstrap; then
+            echo "::error::admin:bootstrap unexpectedly succeeded on a duplicate email"
+            exit 1
+          fi
+        env:
+          BOOTSTRAP_ADMIN_EMAIL: ci-bootstrap-root@example.com
+          BOOTSTRAP_ADMIN_PASSWORD: ci-bootstrap-password-123
+          BOOTSTRAP_ADMIN_NAME: CI Bootstrap Root
+          BOOTSTRAP_ADMIN_ROLE: SUPER_ADMIN
+
+      - name: Integration test (Tenant + Admin Auth)
         run: pnpm test:integration

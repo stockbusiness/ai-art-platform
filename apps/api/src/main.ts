@@ -5,6 +5,7 @@ import { createLogger } from "@ai-art-platform/logger";
 import { NestFactory } from "@nestjs/core";
 
 import { AppModule } from "./app.module.js";
+import { configureApp } from "./bootstrap/configure-app.js";
 
 async function bootstrap(): Promise<void> {
   loadDotEnv(import.meta.url);
@@ -12,6 +13,7 @@ async function bootstrap(): Promise<void> {
   const logger = createLogger({ name: "api", level: env.LOG_LEVEL });
 
   const app = await NestFactory.create(AppModule, { logger: false });
+  configureApp(app, env);
   const port = 3000;
   await app.listen(port);
 

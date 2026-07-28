@@ -45,6 +45,13 @@ describe("PrismaTenantRepository", () => {
   const client: PrismaClient = createPrismaClient();
 
   beforeEach(async () => {
+    // admin_login_events/admin_sessions/admin_users also FK-reference
+    // tenants (ON DELETE RESTRICT, added in PR-03A) — delete them first so
+    // a leftover row from admin-auth-*.integration.spec.ts (sharing this
+    // database sequentially) never blocks this cleanup.
+    await client.adminLoginEvent.deleteMany();
+    await client.adminSession.deleteMany();
+    await client.adminUser.deleteMany();
     await client.tenantSetting.deleteMany();
     await client.tenantDomain.deleteMany();
     await client.tenant.deleteMany();
