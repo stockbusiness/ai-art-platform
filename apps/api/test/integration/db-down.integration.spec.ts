@@ -54,4 +54,29 @@ describe("App startup with the database down", () => {
     expect(response.status).toBe(503);
     expect((response.body as { error: { code: string } }).error.code).toBe("DATABASE_UNAVAILABLE");
   });
+
+  // review-fix P0-7: an unreachable DB must never be reported as
+  // "you are not authenticated" (401) — that would be misleading (the
+  // credentials/session might be perfectly valid) and would make a real
+  // outage indistinguishable from a routine login failure in monitoring.
+  it("POST /api/v1/admin/auth/login returns 503 AUTH_SERVICE_UNAVAILABLE, not 401", async () => {
+    const response = await request(httpServerOf(app)).post("/api/v1/admin/auth/login").send({
+      email: "owner@example.com",
+      password: "irrelevant-password-12345",
+    });
+    expect(response.status).toBe(503);
+    const body = response.body as { error: { code: string; requestId: string } };
+    expect(body.error.code).toBe("AUTH_SERVICE_UNAVAILABLE");
+    expect(body.error.requestId).toBeTruthy();
+  });
+
+  it("GET /api/v1/admin/auth/me returns 503 AUTH_SERVICE_UNAVAILABLE, not 401", async () => {
+    const response = await request(httpServerOf(app))
+      .get("/api/v1/admin/auth/me")
+      .set("Cookie", "ai_art_admin_session=some-opaque-token-value");
+    expect(response.status).toBe(503);
+    expect((response.body as { error: { code: string } }).error.code).toBe(
+      "AUTH_SERVICE_UNAVAILABLE",
+    );
+  });
 });

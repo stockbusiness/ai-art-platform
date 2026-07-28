@@ -24,11 +24,15 @@ describe("Public Tenant API", () => {
   });
 
   beforeEach(async () => {
-    // Delete child rows first — tenant_domains/tenant_settings have an
-    // ON DELETE RESTRICT foreign key to tenants (section 8.4), so a
+    // Delete child rows first — tenant_domains/tenant_settings/admin_users/
+    // admin_sessions/admin_login_events all have an ON DELETE RESTRICT
+    // foreign key to tenants (section 8.4; admin_* added in PR-03A), so a
     // leftover row from another spec file sharing this database (Vitest's
     // integration config runs files sequentially, not in isolated
     // databases) would otherwise block this cleanup.
+    await client.adminLoginEvent.deleteMany();
+    await client.adminSession.deleteMany();
+    await client.adminUser.deleteMany();
     await client.tenantSetting.deleteMany();
     await client.tenantDomain.deleteMany();
     await client.tenant.deleteMany();

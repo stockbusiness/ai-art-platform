@@ -26,16 +26,19 @@
     "db:migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
     "db:seed": "pnpm --filter @ai-art-platform/database run build && tsx prisma/seed.ts",
     "db:studio": "prisma studio --schema prisma/schema.prisma",
-    "test:integration": "turbo run test:integration"
+    "test:integration": "turbo run test:integration",
+    "admin:bootstrap": "pnpm --filter @ai-art-platform/database run build && pnpm --filter @ai-art-platform/domain run build && tsx prisma/admin-bootstrap.ts"
   },
   "dependencies": {
-    "@ai-art-platform/database": "workspace:*"
+    "@ai-art-platform/database": "workspace:*",
+    "@ai-art-platform/domain": "workspace:*"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
     "@prisma/client": "^5.22.0",
     "@typescript-eslint/eslint-plugin": "^8.18.1",
     "@typescript-eslint/parser": "^8.18.1",
+    "argon2": "^0.45.1",
     "eslint": "^9.17.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-import": "^2.31.0",
