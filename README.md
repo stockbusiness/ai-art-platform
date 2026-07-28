@@ -3,9 +3,12 @@
 AI Art operations platform — React/TypeScript rebuild.
 **PR-01 (Repository and Monorepo Foundation)** built the pnpm/Turborepo
 monorepo foundation. **PR-02 (Database and Tenant Foundation)** adds
-PostgreSQL/Prisma, a local Docker dev database, and the Tenant domain
-(no Admin auth, Users, LINE, or business features yet — see
-`OPEN_QUESTIONS_PR01.md`, `OPEN_QUESTIONS_PR02.md`, and the design doc
+PostgreSQL/Prisma, a local Docker dev database, and the Tenant domain.
+**PR-03A (Admin Authentication, Session and RBAC Foundation)** adds
+DB-backed Admin login/session/CSRF/lockout and a fixed RBAC Permission
+Matrix (no general User, LINE, or business features yet — see
+`OPEN_QUESTIONS_PR01.md`, `OPEN_QUESTIONS_PR02.md`,
+`OPEN_QUESTIONS_PR03A.md`, and the design doc
 `AI_ART_PLATFORM_REDESIGN_MASTER_PLAN_PR01.md` for what comes next).
 
 **The legacy PHP application (`team478a/ai-art-school`) is not modified by
@@ -31,29 +34,34 @@ this repository and is referenced only as a specification source.**
 apps/
   admin-web    Admin console shell (React + TypeScript + Vite)
   liff-web     LIFF / end-user shell (React + TypeScript + Vite)
-  api          API foundation (NestJS) — Tenant domain + Public Tenant Resolve
+  api          API foundation (NestJS) — Tenant domain + Admin Auth/RBAC + Public Tenant Resolve
   worker       Background worker process foundation (Node)
 packages/
-  api-contracts  Shared Zod API contracts (incl. Tenant schemas)
-  domain         Framework-free domain modeling primitives (incl. Tenant)
+  api-contracts  Shared Zod API contracts (incl. Tenant and Admin Auth schemas)
+  domain         Framework-free domain modeling primitives (incl. Tenant, Admin Auth)
   database       Prisma Client generation/sharing (no business logic)
   ui             Minimal shared React components
-  config         Environment variable loading/validation (incl. DB env)
+  config         Environment variable loading/validation (incl. DB + Admin Auth env)
   logger         Structured logging with secret redaction
   test-utils     Shared test helpers
 prisma/
-  schema.prisma  Source of truth for the database schema
-  migrations/    Committed SQL migrations
-  seed.ts        Idempotent seed (creates the "default" Tenant)
+  schema.prisma       Source of truth for the database schema
+  migrations/          Committed SQL migrations
+  seed.ts              Idempotent seed (creates the "default" Tenant)
+  admin-bootstrap.ts   `pnpm admin:bootstrap` — creates the first Admin (PR-03A)
 docs/
-  ARCHITECTURE.md                  Module boundaries and TypeScript decisions (PR-01)
-  architecture/ID_POLICY.md        Member ID format decisions (PR-02)
-  architecture/TENANT_POLICY.md    Tenant/LINE/Admin-role policy decisions (PR-02)
-  architecture/DATABASE_BOUNDARIES.md  Layering rules (PR-02)
-  database/ER_DIAGRAM_PR02.md      Entity-relationship diagram (PR-02)
-  database/MIGRATION_POLICY.md     Migration workflow and rules (PR-02)
-  development/LOCAL_DATABASE.md    Local Postgres reference (PR-02)
-OPEN_QUESTIONS_PR01.md / OPEN_QUESTIONS_PR02.md   Recorded open questions (repo root)
+  ARCHITECTURE.md                        Module boundaries and TypeScript decisions (PR-01)
+  architecture/ID_POLICY.md              Member ID format decisions (PR-02)
+  architecture/TENANT_POLICY.md          Tenant/LINE/Admin-role policy decisions (PR-02)
+  architecture/DATABASE_BOUNDARIES.md    Layering rules (PR-02)
+  architecture/ADMIN_AUTH_POLICY.md      Admin login/session/lockout policy (PR-03A)
+  architecture/RBAC_POLICY.md            Permission Matrix and Tenant boundary rules (PR-03A)
+  security/SESSION_COOKIE_CSRF_POLICY.md Session/Cookie/CSRF mechanics (PR-03A)
+  database/ER_DIAGRAM_PR02.md            Entity-relationship diagram (PR-02)
+  database/MIGRATION_POLICY.md           Migration workflow and rules (PR-02)
+  development/LOCAL_DATABASE.md          Local Postgres reference (PR-02)
+  development/ADMIN_BOOTSTRAP.md         Admin Bootstrap CLI reference (PR-03A)
+OPEN_QUESTIONS_PR01.md / OPEN_QUESTIONS_PR02.md / OPEN_QUESTIONS_PR03A.md   Recorded open questions (repo root)
 ```
 
 See each app's/package's own `README.md` for its specific responsibility.
@@ -124,17 +132,18 @@ curl http://localhost:3000/ready
 curl http://localhost:3000/api/v1/public/tenants/default
 ```
 
-| Command                       | Purpose                                                                                           |
-| ----------------------------- | ------------------------------------------------------------------------------------------------- |
-| `pnpm db:up` / `pnpm db:down` | Start / stop the local Postgres container. `db:down` keeps the named volume (your data survives). |
-| `pnpm db:logs`                | Tail the Postgres container's logs.                                                               |
-| `pnpm db:generate`            | Regenerate the Prisma Client (not committed to git).                                              |
-| `pnpm db:validate`            | Validate `prisma/schema.prisma` without a database connection.                                    |
-| `pnpm db:migrate:dev`         | Create + apply a migration from schema changes (local dev only).                                  |
-| `pnpm db:migrate:deploy`      | Apply existing migrations without generating new ones (CI).                                       |
-| `pnpm db:seed`                | Idempotent seed — safe to re-run.                                                                 |
-| `pnpm db:studio`              | Open Prisma Studio (local DB browser GUI).                                                        |
-| `pnpm test:integration`       | Run `apps/api`'s DB-backed integration tests.                                                     |
+| Command                       | Purpose                                                                                              |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `pnpm db:up` / `pnpm db:down` | Start / stop the local Postgres container. `db:down` keeps the named volume (your data survives).    |
+| `pnpm db:logs`                | Tail the Postgres container's logs.                                                                  |
+| `pnpm db:generate`            | Regenerate the Prisma Client (not committed to git).                                                 |
+| `pnpm db:validate`            | Validate `prisma/schema.prisma` without a database connection.                                       |
+| `pnpm db:migrate:dev`         | Create + apply a migration from schema changes (local dev only).                                     |
+| `pnpm db:migrate:deploy`      | Apply existing migrations without generating new ones (CI).                                          |
+| `pnpm db:seed`                | Idempotent seed — safe to re-run.                                                                    |
+| `pnpm db:studio`              | Open Prisma Studio (local DB browser GUI).                                                           |
+| `pnpm test:integration`       | Run `apps/api`'s DB-backed integration tests.                                                        |
+| `pnpm admin:bootstrap`        | Create the first `SUPER_ADMIN` or Tenant admin — see `docs/development/ADMIN_BOOTSTRAP.md` (PR-03A). |
 
 **⚠️ `pnpm db:migrate:dev`/`db:migrate:deploy` must never be pointed at a
 staging or production database from a developer machine.** PR-02 does not
@@ -182,17 +191,25 @@ Copy-Item .env.example .env   # PowerShell
 ```
 
 `admin-web`, `liff-web`, and `apps/worker` boot with working defaults even
-without a `.env` file. **`apps/api` requires `DATABASE_URL` and
-`DATABASE_DIRECT_URL`** (see "Database" above) — `.env.example`'s defaults
-already match `compose.yaml`, so copying it is enough for local
-development.
+without a `.env` file. **`apps/api` requires `DATABASE_URL`,
+`DATABASE_DIRECT_URL`, `ADMIN_WEB_ORIGIN`, and `AUTH_IP_HASH_SECRET`** (see
+"Database" above and `docs/architecture/ADMIN_AUTH_POLICY.md` for the
+PR-03A admin-auth variables) — `.env.example`'s defaults already match
+`compose.yaml`, so copying it is enough for local development.
 
-| Variable              | Required (app)        | Default            | Notes                                                                   |
-| --------------------- | --------------------- | ------------------ | ----------------------------------------------------------------------- |
-| `NODE_ENV`            | No                    | `development`      | One of `development`/`test`/`production`                                |
-| `LOG_LEVEL`           | No                    | `info`             | One of Pino's levels (`fatal`...`trace`)                                |
-| `DATABASE_URL`        | Yes (`apps/api` only) | none — must be set | Runtime connection. Never sent to a browser bundle (no `VITE_` prefix). |
-| `DATABASE_DIRECT_URL` | Yes (`apps/api` only) | none — must be set | Direct (non-pooled) connection, used by `prisma migrate`.               |
+| Variable                           | Required (app)        | Default            | Notes                                                                                                 |
+| ---------------------------------- | --------------------- | ------------------ | ----------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`                         | No                    | `development`      | One of `development`/`test`/`production`                                                              |
+| `LOG_LEVEL`                        | No                    | `info`             | One of Pino's levels (`fatal`...`trace`)                                                              |
+| `DATABASE_URL`                     | Yes (`apps/api` only) | none — must be set | Runtime connection. Never sent to a browser bundle (no `VITE_` prefix).                               |
+| `DATABASE_DIRECT_URL`              | Yes (`apps/api` only) | none — must be set | Direct (non-pooled) connection, used by `prisma migrate`.                                             |
+| `ADMIN_WEB_ORIGIN`                 | Yes (`apps/api` only) | none — must be set | Exact-match CORS origin for `apps/admin-web` (PR-03A).                                                |
+| `AUTH_IP_HASH_SECRET`              | Yes (`apps/api` only) | none — must be set | HMAC key (≥16 chars) for hashing IP/User-Agent/email (PR-03A). Real secret in any shared environment. |
+| `ADMIN_SESSION_TTL_SECONDS`        | No                    | `28800` (8h)       | Admin Session Cookie lifetime (PR-03A).                                                               |
+| `ADMIN_LOGIN_WINDOW_SECONDS`       | No                    | `900` (15m)        | IP-level login rate-limit window (PR-03A).                                                            |
+| `ADMIN_LOGIN_ACCOUNT_MAX_FAILURES` | No                    | `5`                | Consecutive failures before Account Lockout (PR-03A).                                                 |
+| `ADMIN_LOGIN_IP_MAX_FAILURES`      | No                    | `20`               | Failures per IP before rate-limiting (PR-03A).                                                        |
+| `ADMIN_LOCKOUT_SECONDS`            | No                    | `900` (15m)        | Account Lockout duration (PR-03A).                                                                    |
 
 `apps/api` validates its full env (including the two DB variables) at
 startup via `@ai-art-platform/config`'s `apiEnvSchema` and exits with a

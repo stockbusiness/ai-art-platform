@@ -13,6 +13,11 @@ export const SENSITIVE_KEYS = [
   "databaseDirectUrl",
   "DATABASE_URL",
   "DATABASE_DIRECT_URL",
+  // PR-03A: the HMAC key used to hash IP/User-Agent/email before they
+  // reach admin_sessions/admin_login_events (section 3.5 of the PR-03A
+  // instructions) — never logged, even indirectly via a dumped env object.
+  "authIpHashSecret",
+  "AUTH_IP_HASH_SECRET",
 ] as const;
 
 const MAX_DEPTH = 3;
