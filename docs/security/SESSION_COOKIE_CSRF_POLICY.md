@@ -97,6 +97,17 @@ csrf.guard.ts`) verifies, in order: (1) both the Cookie and Header are
   comparison, so an attacker who could somehow control both the Cookie
   and the Header (e.g. a same-site subdomain takeover) still could not
   forge a value matching a Session they don't own.
+- **Timing-safe comparison (review-fix P0-1)**: both comparisons (2) and
+  (3) above use `timingSafeStringEqual()`
+  (`apps/api/src/modules/admin-auth/infrastructure/timing-safe-equal.ts`),
+  a wrapper around `crypto.timingSafeEqual` that checks byte length first
+  (a fast, information-safe rejection — token/hash lengths are
+  fixed-format, not secret) and only calls `timingSafeEqual` once
+  lengths match (it throws on a length mismatch otherwise). A plain
+  `!==` here would leak how many leading bytes matched via response
+  timing, letting an attacker recover a valid CSRF token byte-by-byte
+  across many requests. Unit-tested for equal / one-character-different
+  / different-length / empty-string inputs.
 - **`GET`/`HEAD`/`OPTIONS` never require CSRF** (section 3.4) — `GET
 /me` has no `CsrfGuard` applied.
 - **`POST /login` never requires CSRF** (section 3.4) — there is no

@@ -12,6 +12,7 @@ import { GetCurrentAdminUseCase } from "./application/get-current-admin.use-case
 import { LoginAdminUseCase } from "./application/login-admin.use-case.js";
 import { LogoutAdminUseCase } from "./application/logout-admin.use-case.js";
 import { AUTH_CLOCK } from "./domain-services/auth-clock.port.js";
+import { DB_TRANSACTION_PORT } from "./domain-services/db-transaction.port.js";
 import { PASSWORD_HASHER } from "./domain-services/password-hasher.port.js";
 import { SESSION_TOKEN_PORT } from "./domain-services/session-token.port.js";
 import { Argon2PasswordHasher } from "./infrastructure/argon2-password-hasher.js";
@@ -19,6 +20,7 @@ import { CryptoSessionTokenService } from "./infrastructure/crypto-session-token
 import { PrismaAdminLoginEventRepository } from "./infrastructure/prisma-admin-login-event.repository.js";
 import { PrismaAdminSessionRepository } from "./infrastructure/prisma-admin-session.repository.js";
 import { PrismaAdminUserRepository } from "./infrastructure/prisma-admin-user.repository.js";
+import { PrismaDbTransactionService } from "./infrastructure/prisma-db-transaction.service.js";
 import { SystemAuthClockService } from "./infrastructure/system-auth-clock.service.js";
 import { AdminAuthController } from "./presentation/admin-auth.controller.js";
 import { AdminAuthGuard } from "./presentation/admin-auth.guard.js";
@@ -39,6 +41,7 @@ import { AdminTenantGuard } from "./presentation/tenant.guard.js";
     { provide: PASSWORD_HASHER, useClass: Argon2PasswordHasher },
     { provide: SESSION_TOKEN_PORT, useClass: CryptoSessionTokenService },
     { provide: AUTH_CLOCK, useClass: SystemAuthClockService },
+    { provide: DB_TRANSACTION_PORT, useClass: PrismaDbTransactionService },
     LoginAdminUseCase,
     LogoutAdminUseCase,
     GetCurrentAdminUseCase,

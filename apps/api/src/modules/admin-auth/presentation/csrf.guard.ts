@@ -2,11 +2,13 @@ import { AdminForbiddenError } from "@ai-art-platform/domain";
 import { CanActivate, ExecutionContext, Inject, Injectable } from "@nestjs/common";
 import type { Request } from "express";
 
+import { requestIdOf } from "../../../infrastructure/http/request-id.js";
 import type { AuthenticatedAdminContext } from "../application/authenticated-admin-context.js";
 import {
   SESSION_TOKEN_PORT,
   type SessionTokenPort,
 } from "../domain-services/session-token.port.js";
+import { timingSafeStringEqual } from "../infrastructure/timing-safe-equal.js";
 
 import { mapAdminAuthErrorToHttp } from "./admin-auth-error.mapper.js";
 import { AUTHENTICATED_ADMIN_REQUEST_KEY } from "./current-admin.decorator.js";
@@ -34,7 +36,10 @@ export class CsrfGuard implements CanActivate {
     if (!authenticated) {
       // Programmer error (CsrfGuard applied without AdminAuthGuard first)
       // — fail closed rather than silently allowing the request through.
-      throw mapAdminAuthErrorToHttp(new AdminForbiddenError("No authenticated admin on request"));
+      throw mapAdminAuthErrorToHttp(
+        new AdminForbiddenError("No authenticated admin on request"),
+        requestIdOf(req),
+      );
     }
 
     const cookieToken = req.cookies?.[CSRF_COOKIE_NAME] as unknown;
@@ -46,15 +51,24 @@ export class CsrfGuard implements CanActivate {
       typeof headerToken !== "string" ||
       headerToken.length === 0
     ) {
-      throw mapAdminAuthErrorToHttp(new AdminForbiddenError("Missing CSRF token"));
+      throw mapAdminAuthErrorToHttp(
+        new AdminForbiddenError("Missing CSRF token"),
+        requestIdOf(req),
+      );
     }
 
-    if (cookieToken !== headerToken) {
-      throw mapAdminAuthErrorToHttp(new AdminForbiddenError("CSRF token mismatch"));
+    if (!timingSafeStringEqual(cookieToken, headerToken)) {
+      throw mapAdminAuthErrorToHttp(
+        new AdminForbiddenError("CSRF token mismatch"),
+        requestIdOf(req),
+      );
     }
 
-    if (this.sessionTokens.hash(cookieToken) !== authenticated.csrfTokenHash) {
-      throw mapAdminAuthErrorToHttp(new AdminForbiddenError("CSRF token does not match session"));
+    if (!timingSafeStringEqual(this.sessionTokens.hash(cookieToken), authenticated.csrfTokenHash)) {
+      throw mapAdminAuthErrorToHttp(
+        new AdminForbiddenError("CSRF token does not match session"),
+        requestIdOf(req),
+      );
     }
 
     return true;

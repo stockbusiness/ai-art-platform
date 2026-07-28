@@ -91,4 +91,87 @@ describe("apiEnvSchema", () => {
       ),
     ).toThrow(EnvValidationError);
   });
+
+  describe("ADMIN_TRUST_PROXY_HOPS (P0-5)", () => {
+    it("leaves it undefined by default in development/test", () => {
+      const env = loadEnv(
+        {
+          DATABASE_URL: "postgresql://user:pass@localhost:5432/db",
+          DATABASE_DIRECT_URL: "postgresql://user:pass@localhost:5432/db",
+          ...VALID_ADMIN_AUTH_ENV,
+        },
+        apiEnvSchema,
+      );
+      expect(env.ADMIN_TRUST_PROXY_HOPS).toBeUndefined();
+    });
+
+    it("accepts an explicit non-negative integer", () => {
+      const env = loadEnv(
+        {
+          DATABASE_URL: "postgresql://user:pass@localhost:5432/db",
+          DATABASE_DIRECT_URL: "postgresql://user:pass@localhost:5432/db",
+          ...VALID_ADMIN_AUTH_ENV,
+          ADMIN_TRUST_PROXY_HOPS: "2",
+        },
+        apiEnvSchema,
+      );
+      expect(env.ADMIN_TRUST_PROXY_HOPS).toBe(2);
+    });
+
+    it("rejects a negative value", () => {
+      expect(() =>
+        loadEnv(
+          {
+            DATABASE_URL: "postgresql://user:pass@localhost:5432/db",
+            DATABASE_DIRECT_URL: "postgresql://user:pass@localhost:5432/db",
+            ...VALID_ADMIN_AUTH_ENV,
+            ADMIN_TRUST_PROXY_HOPS: "-1",
+          },
+          apiEnvSchema,
+        ),
+      ).toThrow(EnvValidationError);
+    });
+
+    it("rejects a non-integer value", () => {
+      expect(() =>
+        loadEnv(
+          {
+            DATABASE_URL: "postgresql://user:pass@localhost:5432/db",
+            DATABASE_DIRECT_URL: "postgresql://user:pass@localhost:5432/db",
+            ...VALID_ADMIN_AUTH_ENV,
+            ADMIN_TRUST_PROXY_HOPS: "1.5",
+          },
+          apiEnvSchema,
+        ),
+      ).toThrow(EnvValidationError);
+    });
+
+    it("requires it to be explicitly set when NODE_ENV=production", () => {
+      expect(() =>
+        loadEnv(
+          {
+            NODE_ENV: "production",
+            DATABASE_URL: "postgresql://user:pass@localhost:5432/db",
+            DATABASE_DIRECT_URL: "postgresql://user:pass@localhost:5432/db",
+            ...VALID_ADMIN_AUTH_ENV,
+          },
+          apiEnvSchema,
+        ),
+      ).toThrow(EnvValidationError);
+    });
+
+    it("accepts NODE_ENV=production with ADMIN_TRUST_PROXY_HOPS set (including 0)", () => {
+      const env = loadEnv(
+        {
+          NODE_ENV: "production",
+          DATABASE_URL: "postgresql://user:pass@localhost:5432/db",
+          DATABASE_DIRECT_URL: "postgresql://user:pass@localhost:5432/db",
+          ...VALID_ADMIN_AUTH_ENV,
+          ADMIN_TRUST_PROXY_HOPS: "0",
+        },
+        apiEnvSchema,
+      );
+      expect(env.ADMIN_TRUST_PROXY_HOPS).toBe(0);
+    });
+  });
 });

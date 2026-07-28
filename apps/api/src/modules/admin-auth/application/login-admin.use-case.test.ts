@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import { InMemoryTenantRepository } from "../../tenant/application/test-fixtures/in-memory-tenant.repository.js";
 
 import { LoginAdminUseCase } from "./login-admin.use-case.js";
+import { FakeDbTransactionPort } from "./test-fixtures/fake-db-transaction.port.js";
 import { FakePasswordHasher } from "./test-fixtures/fake-password-hasher.js";
 import { FakeSessionTokenService } from "./test-fixtures/fake-session-token.service.js";
 import { FixedAuthClock } from "./test-fixtures/fixed-auth-clock.js";
@@ -65,6 +66,7 @@ function buildHarness(
     passwordHasher,
     sessionTokens,
     clock,
+    new FakeDbTransactionPort(),
     env,
   );
 
@@ -495,6 +497,226 @@ describe("LoginAdminUseCase", () => {
       expect(loginEvents.events).toHaveLength(1);
       expect(loginEvents.events[0]?.success).toBe(false);
       expect(loginEvents.events[0]?.failureReason).toBe("INVALID_CREDENTIALS");
+    });
+  });
+
+  describe("Timing equalization (dummy Argon2 verify — P0-2)", () => {
+    it("calls verifyDummy, never verify, for an unparseable email", async () => {
+      const { useCase, tenants, passwordHasher } = buildHarness();
+      await seedTenant(tenants, "acme");
+
+      await expect(
+        useCase.execute({
+          tenantKeyRaw: "acme",
+          emailRaw: "not-an-email",
+          password: PASSWORD,
+          ip: "203.0.113.1",
+          userAgent: "vitest",
+          requestId: "req-1",
+        }),
+      ).rejects.toBeInstanceOf(AdminAuthenticationFailedError);
+
+      expect(passwordHasher.verifyDummyCallCount).toBe(1);
+      expect(passwordHasher.verifyCallCount).toBe(0);
+    });
+
+    it("calls verifyDummy for an unknown tenantKey", async () => {
+      const { useCase, passwordHasher } = buildHarness();
+
+      await expect(
+        useCase.execute({
+          tenantKeyRaw: "does-not-exist",
+          emailRaw: "owner@acme.example.com",
+          password: PASSWORD,
+          ip: "203.0.113.1",
+          userAgent: "vitest",
+          requestId: "req-1",
+        }),
+      ).rejects.toBeInstanceOf(AdminAuthenticationFailedError);
+
+      expect(passwordHasher.verifyDummyCallCount).toBe(1);
+      expect(passwordHasher.verifyCallCount).toBe(0);
+    });
+
+    it("calls verifyDummy for a SUSPENDED tenant", async () => {
+      const { useCase, tenants, passwordHasher } = buildHarness();
+      const tenant = await seedTenant(tenants, "acme");
+      tenant.changeStatus("SUSPENDED", NOW);
+      await tenants.update(tenant);
+
+      await expect(
+        useCase.execute({
+          tenantKeyRaw: "acme",
+          emailRaw: "owner@acme.example.com",
+          password: PASSWORD,
+          ip: "203.0.113.1",
+          userAgent: "vitest",
+          requestId: "req-1",
+        }),
+      ).rejects.toBeInstanceOf(AdminAuthenticationFailedError);
+
+      expect(passwordHasher.verifyDummyCallCount).toBe(1);
+      expect(passwordHasher.verifyCallCount).toBe(0);
+    });
+
+    it("calls verifyDummy for an unknown email", async () => {
+      const { useCase, tenants, passwordHasher } = buildHarness();
+      await seedTenant(tenants, "acme");
+
+      await expect(
+        useCase.execute({
+          tenantKeyRaw: "acme",
+          emailRaw: "nobody@acme.example.com",
+          password: PASSWORD,
+          ip: "203.0.113.1",
+          userAgent: "vitest",
+          requestId: "req-1",
+        }),
+      ).rejects.toBeInstanceOf(AdminAuthenticationFailedError);
+
+      expect(passwordHasher.verifyDummyCallCount).toBe(1);
+      expect(passwordHasher.verifyCallCount).toBe(0);
+    });
+
+    it("calls verifyDummy for a DISABLED admin", async () => {
+      const { useCase, adminUsers, tenants, passwordHasher } = buildHarness();
+      const tenant = await seedTenant(tenants, "acme");
+      const admin = await seedAdmin(adminUsers, passwordHasher, {
+        tenantId: tenant.id,
+        email: "owner@acme.example.com",
+        role: "TENANT_OWNER",
+      });
+      const disabled = AdminUser.reconstitute({
+        id: admin.id,
+        tenantId: admin.tenantId,
+        email: admin.email,
+        passwordHash: admin.passwordHash,
+        name: admin.name,
+        role: admin.role,
+        status: "DISABLED",
+        failedLoginCount: admin.failedLoginCount,
+        lockedUntil: admin.lockedUntil,
+        lastLoginAt: admin.lastLoginAt,
+        passwordChangedAt: NOW,
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      await adminUsers.update(disabled);
+
+      await expect(
+        useCase.execute({
+          tenantKeyRaw: "acme",
+          emailRaw: "owner@acme.example.com",
+          password: PASSWORD,
+          ip: "203.0.113.1",
+          userAgent: "vitest",
+          requestId: "req-1",
+        }),
+      ).rejects.toBeInstanceOf(AdminAuthenticationFailedError);
+
+      expect(passwordHasher.verifyDummyCallCount).toBe(1);
+      expect(passwordHasher.verifyCallCount).toBe(0);
+    });
+
+    it("calls the real verify (not verifyDummy) for a wrong password against a real admin", async () => {
+      const { useCase, adminUsers, tenants, passwordHasher } = buildHarness();
+      const tenant = await seedTenant(tenants, "acme");
+      await seedAdmin(adminUsers, passwordHasher, {
+        tenantId: tenant.id,
+        email: "owner@acme.example.com",
+        role: "TENANT_OWNER",
+      });
+
+      await expect(
+        useCase.execute({
+          tenantKeyRaw: "acme",
+          emailRaw: "owner@acme.example.com",
+          password: "totally-wrong-password",
+          ip: "203.0.113.1",
+          userAgent: "vitest",
+          requestId: "req-1",
+        }),
+      ).rejects.toBeInstanceOf(AdminAuthenticationFailedError);
+
+      expect(passwordHasher.verifyCallCount).toBe(1);
+      expect(passwordHasher.verifyDummyCallCount).toBe(0);
+    });
+
+    it("skips both verify and verifyDummy for a locked account (429 path)", async () => {
+      const { useCase, adminUsers, tenants, passwordHasher } = buildHarness({ maxFailures: 1 });
+      const tenant = await seedTenant(tenants, "acme");
+      await seedAdmin(adminUsers, passwordHasher, {
+        tenantId: tenant.id,
+        email: "owner@acme.example.com",
+        role: "TENANT_OWNER",
+      });
+
+      await expect(
+        useCase.execute({
+          tenantKeyRaw: "acme",
+          emailRaw: "owner@acme.example.com",
+          password: "wrong",
+          ip: "203.0.113.1",
+          userAgent: "vitest",
+          requestId: "req-1",
+        }),
+      ).rejects.toBeInstanceOf(AdminAuthenticationFailedError);
+      passwordHasher.verifyCallCount = 0;
+      passwordHasher.verifyDummyCallCount = 0;
+
+      // Now locked — this attempt must be rejected before any verify call.
+      await expect(
+        useCase.execute({
+          tenantKeyRaw: "acme",
+          emailRaw: "owner@acme.example.com",
+          password: PASSWORD,
+          ip: "203.0.113.1",
+          userAgent: "vitest",
+          requestId: "req-1",
+        }),
+      ).rejects.toBeInstanceOf(AdminTooManyAttemptsError);
+
+      expect(passwordHasher.verifyCallCount).toBe(0);
+      expect(passwordHasher.verifyDummyCallCount).toBe(0);
+    });
+
+    it("skips both verify and verifyDummy for the IP rate-limited path (429)", async () => {
+      const { useCase, tenants, adminUsers, passwordHasher } = buildHarness({
+        ipMaxFailures: 1,
+      });
+      const tenant = await seedTenant(tenants, "acme");
+      await seedAdmin(adminUsers, passwordHasher, {
+        tenantId: tenant.id,
+        email: "owner@acme.example.com",
+        role: "TENANT_OWNER",
+      });
+
+      await expect(
+        useCase.execute({
+          tenantKeyRaw: "acme",
+          emailRaw: "owner@acme.example.com",
+          password: "wrong",
+          ip: "203.0.113.9",
+          userAgent: "vitest",
+          requestId: "req-1",
+        }),
+      ).rejects.toBeInstanceOf(AdminAuthenticationFailedError);
+      passwordHasher.verifyCallCount = 0;
+      passwordHasher.verifyDummyCallCount = 0;
+
+      await expect(
+        useCase.execute({
+          tenantKeyRaw: "acme",
+          emailRaw: "owner@acme.example.com",
+          password: PASSWORD,
+          ip: "203.0.113.9",
+          userAgent: "vitest",
+          requestId: "req-1",
+        }),
+      ).rejects.toBeInstanceOf(AdminTooManyAttemptsError);
+
+      expect(passwordHasher.verifyCallCount).toBe(0);
+      expect(passwordHasher.verifyDummyCallCount).toBe(0);
     });
   });
 });

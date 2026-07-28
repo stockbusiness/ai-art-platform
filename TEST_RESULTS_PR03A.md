@@ -10,11 +10,11 @@
 
 ## コミットSHA
 
-`7c7e19b`（本体実装コミット。ローカル検証・Clean
-Clone検証はこの時点で実施）。PR作成時点の最終コミットは`3280eaf`
-（提出物文書追加後）。本ファイル自身の更新（CI結果追記）を含む
-最新コミットは`cccedbb` — 4節・5節のCI結果は`cccedbb`に対する
-実行のもの（`3280eaf`時点の結果も参考として4節に残している）。
+初回実装：`7c7e19b`（本体実装）〜`6cbfdaa`（PR #3作成後のCI結果
+追記まで）。本書のこの版は、`AI_ART_PLATFORM_PR03A_REVIEW_FIX_
+INSTRUCTIONS.md`に基づく追加レビュー修正（P0-1〜P0-7, P1-1〜P1-5）
+適用後の結果を記録する — 修正前HEAD `6cbfdaa5a99b49345cde5579ad5e9d
+7f09a69fad`。最新HEADは本書末尾および完了報告を参照。
 
 ## 環境
 
@@ -36,20 +36,42 @@ pnpm test
 
 | Workspace                      | Test Files |   Tests |
 | ------------------------------ | ---------: | ------: |
-| @ai-art-platform/config        |          2 |      10 |
+| @ai-art-platform/config        |          2 |      16 |
 | @ai-art-platform/logger        |          1 |       2 |
 | @ai-art-platform/domain        |         13 |     100 |
 | @ai-art-platform/api-contracts |          5 |      19 |
 | @ai-art-platform/database      |          1 |       1 |
 | @ai-art-platform/ui            |          2 |       3 |
 | @ai-art-platform/test-utils    |          1 |       2 |
-| @ai-art-platform/api           |         13 |      59 |
+| @ai-art-platform/api           |         16 |      85 |
 | @ai-art-platform/worker        |          1 |       1 |
 | @ai-art-platform/admin-web     |          1 |       2 |
 | @ai-art-platform/liff-web      |          1 |       3 |
-| **合計**                       |     **42** | **202** |
+| **合計**                       |     **45** | **234** |
 
-全件成功。前回提出（`3b9b1ca`時点、91テスト・26ファイル）から、本
+全件成功。今回の追加レビュー修正ラウンド（review-fix、修正前HEAD
+`6cbfdaa`）で32テスト・3ファイルを追加：
+
+- `@ai-art-platform/config`：`env.test.ts`へ+6テスト
+  （`ADMIN_TRUST_PROXY_HOPS`：既定未設定・明示値・負数拒否・非整数
+  拒否・production時必須・production+0許可、review-fix P0-5）
+- `@ai-art-platform/api`：+26テスト・+3ファイル
+  - `timing-safe-equal.test.ts`（5、新規）：同一・1文字違い・長さ
+    違い・空文字のTiming-safe比較（P0-1）
+  - `admin-auth-error.mapper.test.ts`（7、新規）：4種の既知Errorの
+    Mapping、未知Errorの503 Mapping（P0-7）、内部情報非漏洩、
+    requestId伝播確認（P0-6）
+  - `configure-app.test.ts`（4、新規）：`ADMIN_TRUST_PROXY_HOPS`から
+    Express `trust proxy`設定への配線確認（P0-5）
+  - `login-admin.use-case.test.ts`：+9テスト（各401/429経路での
+    `verify`/`verifyDummy`呼出回数を検証、P0-2）
+  - `argon2-password-hasher.test.ts`：+2テスト（`verifyDummy`の
+    決定性・実Argon2id利用確認）
+
+以下は初回実装ラウンド（PR #3提出時点、202テスト・42ファイル）の
+記録（変更なし、参考として残す）：
+
+前回提出（`3b9b1ca`時点、91テスト・26ファイル）から、初回実装
 ラウンドで111テスト・16ファイルを追加：
 
 - `@ai-art-platform/domain`：+57テスト・+6ファイル
@@ -89,18 +111,19 @@ pnpm test
 pnpm test:integration
 ```
 
-| ファイル                                    |  Tests | 内容                                                                                                                            |
-| ------------------------------------------- | -----: | ------------------------------------------------------------------------------------------------------------------------------- |
-| `admin-auth-api.integration.spec.ts`        |     24 | Login成功（Tenant/SUPER_ADMIN）、/me、Login失敗全パターン（同一Generic Error）、Lockout、IP Rate Limit、Logout+CSRF、Tenant境界 |
-| `admin-auth-repository.integration.spec.ts` |     20 | Migration適用確認、AdminUser永続化・重複拒否、DB CHECK制約6種、部分UNIQUE Index、AdminSession永続化、監査ログ非平文保存         |
-| `tenant-repository.integration.spec.ts`     |     25 | PR-02から継続（回帰確認）                                                                                                       |
-| `public-tenant-api.integration.spec.ts`     |      6 | PR-02から継続（回帰確認）                                                                                                       |
-| `db-down.integration.spec.ts`               |      4 | PR-02から継続（回帰確認）                                                                                                       |
-| `readiness.integration.spec.ts`             |      2 | PR-02から継続（回帰確認）                                                                                                       |
-| **合計**                                    | **81** | 全件成功                                                                                                                        |
+| ファイル                                    |  Tests | 内容                                                                                                                                                        |
+| ------------------------------------------- | -----: | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `admin-auth-api.integration.spec.ts`        |     29 | Login成功、/me、Login失敗全パターン、Lockout、IP Rate Limit、Logout+CSRF、Tenant境界、**P0-3/P0-4並行性、P1-1 Fault Injection、P0-6 requestId、P0-5 Proxy** |
+| `admin-auth-repository.integration.spec.ts` |     29 | Migration適用確認、AdminUser永続化・重複拒否、DB CHECK制約、部分UNIQUE Index、AdminSession永続化、監査ログ非平文保存、**P1-2/P1-4 CHECK制約、P1-3 Index**   |
+| `tenant-repository.integration.spec.ts`     |     25 | PR-02から継続（回帰確認）                                                                                                                                   |
+| `public-tenant-api.integration.spec.ts`     |      6 | PR-02から継続（回帰確認）                                                                                                                                   |
+| `db-down.integration.spec.ts`               |      6 | PR-02から継続（回帰確認）+ **P0-7：Login/`/me`のDB停止時503確認**                                                                                           |
+| `admin-bootstrap-cli.integration.spec.ts`   |      2 | **新規：P1-5 Bootstrap CLIの実プロセスstdout/stderrにEmailが含まれないことを確認**                                                                          |
+| `readiness.integration.spec.ts`             |      2 | PR-02から継続（回帰確認）                                                                                                                                   |
+| **合計**                                    | **99** | 全件成功                                                                                                                                                    |
 
-前回提出（`3b9b1ca`時点、37テスト・4ファイル）から44テスト・2ファイル
-を追加。
+前回提出（PR #3提出時点`6cbfdaa`、81テスト・6ファイル）から
+review-fixラウンドで18テスト・1ファイルを追加。
 
 ### Admin Auth API Integration Testの詳細（section 13.3準拠）
 
@@ -147,6 +170,65 @@ pnpm test:integration
   （`countRecentFailuresByIpHash`）が窓外・別IP・成功イベントを正しく
   除外することを確認。
 
+### review-fix検証の詳細（P0-1〜P0-7, P1-1〜P1-5）
+
+- **P0-1（Timing-safe CSRF）**：Unit Test（`timing-safe-equal.test.ts`）
+  で同一・1文字違い・長さ違い・空文字を検証。`CsrfGuard`の2箇所の
+  比較を`timingSafeStringEqual`へ置換したことをコードレビューと
+  既存CSRF統合テスト（Header欠落403等）の継続成功で確認。
+- **P0-2（Dummy Argon2 Verify）**：`login-admin.use-case.test.ts`で
+  不明Email／Tenant不存在・SUSPENDED／Admin不存在／DISABLEDの4経路
+  すべてで`verifyDummy`が1回・`verify`が0回呼ばれること、実Admin
+  へのPassword不一致では`verify`が1回・`verifyDummy`が0回、
+  Lockout・IP Rate Limitedの429経路ではいずれも0回であることを
+  Call Count Assertionで確認。
+- **P0-3（Account Lockout Atomic化）**：8並行Wrong Password試行後、
+  `admin_users.failed_login_count`がDB上401応答数と厳密に一致する
+  ことを確認（`admin-auth-api.integration.spec.ts`「account lockout
+  counter never loses an update」）。
+- **P0-4（IP Rate Limit Atomic化）**：`ADMIN_LOGIN_IP_MAX_FAILURES=3`
+  （縮小閾値、既定20と同じロジック経路）に対し6並行試行を送信し、
+  401が正確に3件・429が正確に3件、`admin_login_events`が正確に6件
+  になることを確認（並行実行下でも閾値をすり抜けないことの決定的
+  証拠 — 縮小閾値を用いた理由は「23. 未実施項目」参照）。
+- **P0-5（Reverse Proxy IP）**：`configure-app.test.ts`で
+  `ADMIN_TRUST_PROXY_HOPS`未設定時に`trust proxy`へ`0`が渡ることを
+  確認。統合テストでは、既定（trust proxy=0）の状態で異なる
+  `X-Forwarded-For`を送っても同一の`ip_hash`に集約される
+  （spoofingが無視される）ことを確認。
+- **P0-6（Request ID相関）**：Login失敗時のHTTPレスポンス
+  `error.requestId`・レスポンスHeader`X-Request-ID`・
+  `admin_login_events.request_id`が完全一致することを確認。
+- **P0-7（Infrastructure障害→503）**：`db-down.integration.spec.ts`
+  へ追加した2テストで、DB接続不可時に`POST /login`・
+  `GET /me`がいずれも`401`ではなく`503 AUTH_SERVICE_UNAVAILABLE`を
+  返すことを確認（`GET /health`は200のまま、`GET /ready`は503のまま
+  — PR-02からの既存挙動に変化なし）。
+- **P1-1（Transaction境界）**：Fault Injectionテスト
+  （`AdminSessionRepository.create`を1回だけ例外throwするよう
+  `vi.spyOn`でモック）で、Session作成失敗時に直前に実行された
+  Admin状態のAtomic Resetおよび監査ログ書込みが共にRollbackされ
+  DBへ反映されないことを確認（`lastLoginAt`がNULLのまま、
+  `admin_login_events`が0件、`admin_sessions`が0件）。
+- **P1-2（Login Event CHECK制約）**：Raw SQLで
+  `success=true`+`failure_reason`ありを拒否、
+  `success=false`+`failure_reason`なしを拒否することを確認
+  （SQLSTATE `23514`）。
+- **P1-3（必須Index）**：`information_schema`相当のIndex存在確認、
+  および`SET LOCAL enable_seqscan = off`でPlannerにIndex利用を強制
+  した`EXPLAIN`で`admin_login_events_ip_hash_success_created_at_idx`
+  が実際に選択可能であることを確認（テストDBの行数が少なく
+  Cost-basedでは自動選択されないため、Seqscan禁止で強制検証 —
+  「10. Session設計」ではなく本節の脚注として記録）。
+- **P1-4（Hash形式CHECK）**：`admin_sessions`/`admin_login_events`の
+  各`*_hash`カラムへ非Hex64値（短い文字列・大文字混じり）を
+  Raw SQL INSERTし、CHECK制約違反（`23514`）で拒否されることを確認。
+  NULL許容カラムはNULL自体は許可されることも確認。
+- **P1-5（Bootstrap CLI Email非表示）**：実CLIプロセスを
+  `child_process.execFile`で起動し、成功時・重複拒否時いずれの
+  stdout/stderrにも入力Emailが含まれないことを確認
+  （`admin-bootstrap-cli.integration.spec.ts`）。
+
 ---
 
 ## 3. Migration Test結果（Bootstrap CLI検証含む）
@@ -154,8 +236,9 @@ pnpm test:integration
 ```bash
 # 空DB（新規作成）へ
 DATABASE_URL=... DATABASE_DIRECT_URL=... pnpm db:migrate:deploy
-# → 成功（2 migration適用: 20260727101006_pr02_tenant_foundation →
-#   20260728070941_pr03a_admin_auth_foundation の順）
+# → 成功（3 migration適用: 20260727101006_pr02_tenant_foundation →
+#   20260728070941_pr03a_admin_auth_foundation →
+#   20260728090611_pr03a_review_fix_hardening の順）
 
 # 同一DBへ再実行
 DATABASE_URL=... DATABASE_DIRECT_URL=... pnpm db:migrate:deploy
@@ -169,12 +252,14 @@ DATABASE_URL=... DATABASE_DIRECT_URL=... pnpm db:seed
 BOOTSTRAP_ADMIN_EMAIL=... BOOTSTRAP_ADMIN_PASSWORD=... \
 BOOTSTRAP_ADMIN_NAME=... BOOTSTRAP_ADMIN_ROLE=SUPER_ADMIN \
 pnpm admin:bootstrap
-# → "Bootstrap admin created: ...@example.com (SUPER_ADMIN)"
+# → "Bootstrap admin created: id=<uuid> role=SUPER_ADMIN"
+#   （review-fix P1-5：Emailは出力されない）
 
 # Bootstrap CLI（同一Emailで再実行・重複拒否確認）
 （同じ環境変数のまま）pnpm admin:bootstrap
-# → "Admin bootstrap failed: An admin with email "..." already exists
+# → "Admin bootstrap failed: An admin with this email already exists
 #    as a SUPER_ADMIN" / exit code 1
+#   （review-fix P1-5：Emailは出力されない）
 
 # Bootstrap CLIのバリデーション確認
 # - SUPER_ADMIN + BOOTSTRAP_TENANT_KEY設定 → 失敗
@@ -191,17 +276,19 @@ pnpm admin:bootstrap
 
 # 同一DBに対しIntegration Testを実行
 TEST_DATABASE_URL=... pnpm --filter @ai-art-platform/api test:integration
-# → 81/81 成功（別の空DBを使用 — 上記のBootstrap検証で作成した
+# → 99/99 成功（別の空DBを使用 — 上記のBootstrap検証で作成した
 #   Admin行と競合しないよう、Integration Testは常に
 #   TEST_DATABASE_URLで隔離されたDBを使用）
 
 # DB破棄
-DROP DATABASE ai_art_platform_ci_check;
+DROP DATABASE ai_art_platform_freshcheck;
 ```
 
-全ステップ成功。空DBへのPR-02→PR-03A順次Migration適用、2回目の
-`migrate deploy`での不整合なし、Bootstrap CLIの成功・重複拒否・
-バリデーション全パターンを確認した。
+全ステップ成功。review-fixラウンドでは、実際に
+`ai_art_platform_freshcheck`という全く新規のPostgreSQL DBを作成し、
+3 Migrationを順次適用→再適用no-op確認→Seed→Bootstrap CLI（成功・
+重複拒否）→同DBに対しIntegration Test 99件すべて成功、を実施した
+上でDBを破棄した（推測ではなく実際にコマンドを実行して確認）。
 
 ---
 

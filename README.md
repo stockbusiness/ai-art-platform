@@ -197,19 +197,20 @@ without a `.env` file. **`apps/api` requires `DATABASE_URL`,
 PR-03A admin-auth variables) — `.env.example`'s defaults already match
 `compose.yaml`, so copying it is enough for local development.
 
-| Variable                           | Required (app)        | Default            | Notes                                                                                                 |
-| ---------------------------------- | --------------------- | ------------------ | ----------------------------------------------------------------------------------------------------- |
-| `NODE_ENV`                         | No                    | `development`      | One of `development`/`test`/`production`                                                              |
-| `LOG_LEVEL`                        | No                    | `info`             | One of Pino's levels (`fatal`...`trace`)                                                              |
-| `DATABASE_URL`                     | Yes (`apps/api` only) | none — must be set | Runtime connection. Never sent to a browser bundle (no `VITE_` prefix).                               |
-| `DATABASE_DIRECT_URL`              | Yes (`apps/api` only) | none — must be set | Direct (non-pooled) connection, used by `prisma migrate`.                                             |
-| `ADMIN_WEB_ORIGIN`                 | Yes (`apps/api` only) | none — must be set | Exact-match CORS origin for `apps/admin-web` (PR-03A).                                                |
-| `AUTH_IP_HASH_SECRET`              | Yes (`apps/api` only) | none — must be set | HMAC key (≥16 chars) for hashing IP/User-Agent/email (PR-03A). Real secret in any shared environment. |
-| `ADMIN_SESSION_TTL_SECONDS`        | No                    | `28800` (8h)       | Admin Session Cookie lifetime (PR-03A).                                                               |
-| `ADMIN_LOGIN_WINDOW_SECONDS`       | No                    | `900` (15m)        | IP-level login rate-limit window (PR-03A).                                                            |
-| `ADMIN_LOGIN_ACCOUNT_MAX_FAILURES` | No                    | `5`                | Consecutive failures before Account Lockout (PR-03A).                                                 |
-| `ADMIN_LOGIN_IP_MAX_FAILURES`      | No                    | `20`               | Failures per IP before rate-limiting (PR-03A).                                                        |
-| `ADMIN_LOCKOUT_SECONDS`            | No                    | `900` (15m)        | Account Lockout duration (PR-03A).                                                                    |
+| Variable                           | Required (app)        | Default            | Notes                                                                                                               |
+| ---------------------------------- | --------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`                         | No                    | `development`      | One of `development`/`test`/`production`                                                                            |
+| `LOG_LEVEL`                        | No                    | `info`             | One of Pino's levels (`fatal`...`trace`)                                                                            |
+| `DATABASE_URL`                     | Yes (`apps/api` only) | none — must be set | Runtime connection. Never sent to a browser bundle (no `VITE_` prefix).                                             |
+| `DATABASE_DIRECT_URL`              | Yes (`apps/api` only) | none — must be set | Direct (non-pooled) connection, used by `prisma migrate`.                                                           |
+| `ADMIN_WEB_ORIGIN`                 | Yes (`apps/api` only) | none — must be set | Exact-match CORS origin for `apps/admin-web` (PR-03A).                                                              |
+| `AUTH_IP_HASH_SECRET`              | Yes (`apps/api` only) | none — must be set | HMAC key (≥16 chars) for hashing IP/User-Agent/email (PR-03A). Real secret in any shared environment.               |
+| `ADMIN_SESSION_TTL_SECONDS`        | No                    | `28800` (8h)       | Admin Session Cookie lifetime (PR-03A).                                                                             |
+| `ADMIN_LOGIN_WINDOW_SECONDS`       | No                    | `900` (15m)        | IP-level login rate-limit window (PR-03A).                                                                          |
+| `ADMIN_LOGIN_ACCOUNT_MAX_FAILURES` | No                    | `5`                | Consecutive failures before Account Lockout (PR-03A).                                                               |
+| `ADMIN_LOGIN_IP_MAX_FAILURES`      | No                    | `20`               | Failures per IP before rate-limiting (PR-03A).                                                                      |
+| `ADMIN_LOCKOUT_SECONDS`            | No                    | `900` (15m)        | Account Lockout duration (PR-03A).                                                                                  |
+| `ADMIN_TRUST_PROXY_HOPS`           | Conditional           | unset (`0`)        | Trusted reverse-proxy hop count for Express `trust proxy`; required when `NODE_ENV=production` (PR-03A review-fix). |
 
 `apps/api` validates its full env (including the two DB variables) at
 startup via `@ai-art-platform/config`'s `apiEnvSchema` and exits with a

@@ -4,15 +4,23 @@ import {
   AdminUser,
   type AdminEmail,
   type AdminUserRepository,
+  type AtomicFailedLoginResult,
+  type DbTransactionHandle,
 } from "@ai-art-platform/domain";
 import { Injectable } from "@nestjs/common";
 
 import { PrismaService } from "../../../infrastructure/database/prisma.service.js";
 
 import { toCreateInput, toDomainAdminUser, toUpdateInput } from "./admin-user.mapper.js";
+import { clientFor } from "./prisma-tx.js";
 
 function isUniqueConstraintViolation(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+}
+
+interface AtomicFailedLoginRow {
+  failed_login_count: number;
+  locked_until: Date | null;
 }
 
 @Injectable()
@@ -55,10 +63,55 @@ export class PrismaAdminUserRepository implements AdminUserRepository {
     }
   }
 
-  async update(adminUser: AdminUser): Promise<void> {
-    await this.prisma.client.adminUser.update({
+  async update(adminUser: AdminUser, tx?: DbTransactionHandle): Promise<void> {
+    await clientFor(this.prisma.client, tx).adminUser.update({
       where: { id: adminUser.id },
       data: toUpdateInput(adminUser),
+    });
+  }
+
+  /**
+   * Single atomic UPDATE (P0-3) — reads and writes `failed_login_count` in
+   * the same statement, so Postgres's row-level locking serializes
+   * concurrent callers instead of letting a read-modify-write via
+   * `update()` lose an increment. The `locked_until` branch is evaluated
+   * against the *new* count within the same statement, so the lock is set
+   * atomically with the count that triggered it.
+   */
+  async recordFailedLoginAtomically(
+    id: string,
+    params: { now: Date; maxFailures: number; lockoutSeconds: number },
+    tx?: DbTransactionHandle,
+  ): Promise<AtomicFailedLoginResult> {
+    const lockedUntilIfTripped = new Date(params.now.getTime() + params.lockoutSeconds * 1000);
+    const rows = await clientFor(this.prisma.client, tx).$queryRaw<AtomicFailedLoginRow[]>`
+      UPDATE admin_users
+      SET failed_login_count = failed_login_count + 1,
+          locked_until = CASE
+            WHEN failed_login_count + 1 >= ${params.maxFailures}
+              THEN ${lockedUntilIfTripped}
+            ELSE locked_until
+          END,
+          updated_at = ${params.now}
+      WHERE id = ${id}::uuid
+      RETURNING failed_login_count, locked_until
+    `;
+    const row = rows[0];
+    if (!row) {
+      throw new Error(`recordFailedLoginAtomically: admin ${id} not found`);
+    }
+    return { failedLoginCount: row.failed_login_count, lockedUntil: row.locked_until };
+  }
+
+  /** Atomic (trivially — no read-modify-write dependency) reset + lastLoginAt stamp. */
+  async recordSuccessfulLoginAtomically(
+    id: string,
+    now: Date,
+    tx?: DbTransactionHandle,
+  ): Promise<void> {
+    await clientFor(this.prisma.client, tx).adminUser.update({
+      where: { id },
+      data: { failedLoginCount: 0, lockedUntil: null, lastLoginAt: now, updatedAt: now },
     });
   }
 }

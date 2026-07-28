@@ -4,6 +4,7 @@ import { CanActivate, ExecutionContext, Injectable } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 
+import { requestIdOf } from "../../../infrastructure/http/request-id.js";
 import type { AuthenticatedAdminContext } from "../application/authenticated-admin-context.js";
 
 import { mapAdminAuthErrorToHttp } from "./admin-auth-error.mapper.js";
@@ -36,7 +37,10 @@ export class PermissionGuard implements CanActivate {
     const req = context.switchToHttp().getRequest<RequestWithAuthenticatedAdmin>();
     const authenticated = req[AUTHENTICATED_ADMIN_REQUEST_KEY];
     if (!authenticated) {
-      throw mapAdminAuthErrorToHttp(new AdminForbiddenError("No authenticated admin on request"));
+      throw mapAdminAuthErrorToHttp(
+        new AdminForbiddenError("No authenticated admin on request"),
+        requestIdOf(req),
+      );
     }
 
     const missing = required.filter(
@@ -45,6 +49,7 @@ export class PermissionGuard implements CanActivate {
     if (missing.length > 0) {
       throw mapAdminAuthErrorToHttp(
         new AdminForbiddenError(`Missing required permission(s): ${missing.join(", ")}`),
+        requestIdOf(req),
       );
     }
     return true;

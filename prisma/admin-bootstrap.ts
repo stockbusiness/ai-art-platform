@@ -94,8 +94,11 @@ async function main(): Promise<void> {
             where: { tenantId: null, email: email.toString(), role: "SUPER_ADMIN" },
           });
     if (existing) {
+      // Never include the email (review-fix P1-5) — the duplicate-ness
+      // itself is enough to report; the specific email that collided
+      // must not appear in CLI output/logs.
       throw new Error(
-        `An admin with email "${email.toString()}" already exists${
+        `An admin with this email already exists${
           tenantId ? ` for tenant "${tenantKeyRaw}"` : " as a SUPER_ADMIN"
         }`,
       );
@@ -128,10 +131,12 @@ async function main(): Promise<void> {
       },
     });
 
-    // Never print the password or its hash — only confirm success.
+    // Never print the password, its hash, or the email (review-fix
+    // P1-5) — only what's needed to confirm success without exposing PII
+    // in CLI output/logs: the generated Admin ID, Role, and Tenant Key.
     // eslint-disable-next-line no-console
     console.log(
-      `Bootstrap admin created: ${email.toString()} (${role}${tenantKeyRaw ? `, tenant "${tenantKeyRaw}"` : ""})`,
+      `Bootstrap admin created: id=${admin.id} role=${role}${tenantKeyRaw ? ` tenant="${tenantKeyRaw}"` : ""}`,
     );
   } finally {
     await prisma.$disconnect();

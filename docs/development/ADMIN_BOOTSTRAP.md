@@ -73,6 +73,18 @@ All failures exit with a non-zero code (`process.exitCode = 1`) and
 print only `error.message` — never the password, never the password
 hash, never a raw stack trace with request internals.
 
+**review-fix P1-5**: the email is no longer printed either, on success
+or on the duplicate-rejection error. Success output now reads
+`Bootstrap admin created: id=<uuid> role=<ROLE>[ tenant="<key>"]` —
+identifiable enough to confirm the operation and locate the row, without
+putting the operator-supplied email into shell history, CI logs, or
+terminal scrollback. The duplicate error reads `An admin with this email
+already exists...` without echoing which email. Verified by an
+integration test that spawns the actual CLI process and asserts the
+input email never appears in stdout or stderr, for both the success and
+duplicate-rejection cases
+(`apps/api/test/integration/admin-bootstrap-cli.integration.spec.ts`).
+
 ## Safety properties
 
 - Never run automatically — not part of `prisma/seed.ts`, not part of

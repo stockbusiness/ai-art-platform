@@ -11,8 +11,11 @@
 | -------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | `20260728070941_pr03a_admin_auth_foundation` | `admin_users`／`admin_sessions`／`admin_login_events`の新規作成（PR-02のMigrationは無編集） |
 
+| `20260728090611_pr03a_review_fix_hardening` | 追加レビュー修正（P1-2〜P1-4）：CHECK制約1件、Hash形式CHECK制約7件、Index10件の追加。既存2件のMigrationは無編集 |
+
 ファイル：
 `prisma/migrations/20260728070941_pr03a_admin_auth_foundation/migration.sql`
+`prisma/migrations/20260728090611_pr03a_review_fix_hardening/migration.sql`
 
 ## テーブル一覧
 
@@ -105,6 +108,51 @@ Tenant Contextを取得する（section 4.3の設計方針通り）。
 Email／IP／User-Agentの平文はいずれのカラムにも保存されない（統合
 テストで直接検証済み — `TEST_RESULTS_PR03A.md`参照）。
 
+## 追加レビュー修正（`20260728090611_pr03a_review_fix_hardening`）
+
+### CHECK制約
+
+```sql
+-- P1-2: 成功時はfailure_reasonなし、失敗時は必須
+ALTER TABLE "admin_login_events" ADD CONSTRAINT "admin_login_events_success_failure_reason_check"
+  CHECK (
+    (success = true AND failure_reason IS NULL)
+    OR (success = false AND failure_reason IS NOT NULL)
+  );
+
+-- P1-4: *_hashカラムはSHA-256/HMAC-SHA256のHex digest（64文字小文字）固定形式。
+-- NULL許容カラムはNULLまたはHex64のみ許可。
+ALTER TABLE "admin_sessions" ADD CONSTRAINT "admin_sessions_token_hash_format_check"
+  CHECK (token_hash ~ '^[0-9a-f]{64}$');
+ALTER TABLE "admin_sessions" ADD CONSTRAINT "admin_sessions_csrf_token_hash_format_check"
+  CHECK (csrf_token_hash ~ '^[0-9a-f]{64}$');
+ALTER TABLE "admin_sessions" ADD CONSTRAINT "admin_sessions_ip_hash_format_check"
+  CHECK (ip_hash IS NULL OR ip_hash ~ '^[0-9a-f]{64}$');
+ALTER TABLE "admin_sessions" ADD CONSTRAINT "admin_sessions_user_agent_hash_format_check"
+  CHECK (user_agent_hash IS NULL OR user_agent_hash ~ '^[0-9a-f]{64}$');
+ALTER TABLE "admin_login_events" ADD CONSTRAINT "admin_login_events_email_hash_format_check"
+  CHECK (email_hash ~ '^[0-9a-f]{64}$');
+ALTER TABLE "admin_login_events" ADD CONSTRAINT "admin_login_events_ip_hash_format_check"
+  CHECK (ip_hash IS NULL OR ip_hash ~ '^[0-9a-f]{64}$');
+ALTER TABLE "admin_login_events" ADD CONSTRAINT "admin_login_events_user_agent_hash_format_check"
+  CHECK (user_agent_hash IS NULL OR user_agent_hash ~ '^[0-9a-f]{64}$');
+```
+
+### Index（P1-3）
+
+| テーブル             | Index                                                 | 用途                                  |
+| -------------------- | ----------------------------------------------------- | ------------------------------------- |
+| `admin_users`        | `tenant_id`, `status`, `locked_until`（各単独）       | Tenant別・状態別・Lockout判定の検索   |
+| `admin_sessions`     | `admin_user_id`, `expires_at`, `revoked_at`（各単独） | FK結合・有効期限/失効判定             |
+| `admin_login_events` | `created_at`                                          | 時系列監査クエリ                      |
+| `admin_login_events` | `(admin_user_id, created_at)`                         | 管理者別履歴                          |
+| `admin_login_events` | `(email_hash, created_at)`                            | Email別履歴                           |
+| `admin_login_events` | `(ip_hash, success, created_at)`                      | IP単位Rate Limitのcountクエリ（P0-4） |
+
+`EXPLAIN`（`enable_seqscan = off`でIndex利用可能性を強制確認）で
+`admin_login_events_ip_hash_success_created_at_idx`が実際に選択可能で
+あることを統合テストで確認済み（`TEST_RESULTS_PR03A.md`参照）。
+
 ## Enum
 
 ```text
@@ -152,18 +200,24 @@ admin_users
 
 ## 環境変数（PR-03A追加分）
 
-| 変数                               | 用途                                                               | 既定値           |
-| ---------------------------------- | ------------------------------------------------------------------ | ---------------- |
-| `ADMIN_WEB_ORIGIN`                 | CORSの完全一致許可Origin                                           | 必須（既定なし） |
-| `ADMIN_SESSION_TTL_SECONDS`        | Session/CSRF Cookieの有効期間                                      | `28800`（8時間） |
-| `ADMIN_LOGIN_WINDOW_SECONDS`       | IP単位Rate Limitの集計窓                                           | `900`（15分）    |
-| `ADMIN_LOGIN_ACCOUNT_MAX_FAILURES` | Account Lockoutの連続失敗閾値                                      | `5`              |
-| `ADMIN_LOGIN_IP_MAX_FAILURES`      | IP単位Rate Limitの失敗回数上限                                     | `20`             |
-| `ADMIN_LOCKOUT_SECONDS`            | Account Lockoutの継続時間                                          | `900`（15分）    |
-| `AUTH_IP_HASH_SECRET`              | Email/IP/User-AgentをHMAC-SHA256でHash化する際の鍵。16文字以上必須 | 必須（既定なし） |
+| 変数                               | 用途                                                                       | 既定値                                                      |
+| ---------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `ADMIN_WEB_ORIGIN`                 | CORSの完全一致許可Origin                                                   | 必須（既定なし）                                            |
+| `ADMIN_SESSION_TTL_SECONDS`        | Session/CSRF Cookieの有効期間                                              | `28800`（8時間）                                            |
+| `ADMIN_LOGIN_WINDOW_SECONDS`       | IP単位Rate Limitの集計窓                                                   | `900`（15分）                                               |
+| `ADMIN_LOGIN_ACCOUNT_MAX_FAILURES` | Account Lockoutの連続失敗閾値                                              | `5`                                                         |
+| `ADMIN_LOGIN_IP_MAX_FAILURES`      | IP単位Rate Limitの失敗回数上限                                             | `20`                                                        |
+| `ADMIN_LOCKOUT_SECONDS`            | Account Lockoutの継続時間                                                  | `900`（15分）                                               |
+| `AUTH_IP_HASH_SECRET`              | Email/IP/User-AgentをHMAC-SHA256でHash化する際の鍵。16文字以上必須         | 必須（既定なし）                                            |
+| `ADMIN_TRUST_PROXY_HOPS`           | Express `trust proxy`に渡す信頼するReverse Proxyのhop数（review-fix P0-5） | development/test：未設定（0扱い）。production：明示設定必須 |
 
 `packages/config`の`apiEnvSchema`（Server-only Schema、apps/apiのみ）で
-検証。`AUTH_IP_HASH_SECRET`は`packages/logger`の`SENSITIVE_KEYS`には
-未追加 — 値自体をログへ出力するコードパスが存在しないため（Hash計算に
-使うのみ）だが、環境変数一覧・設定ドキュメント上は機密情報として
-扱うこと。
+検証。
+
+**訂正（review-fix時に判明した誤記）**：本書の旧版には
+「`AUTH_IP_HASH_SECRET`は`packages/logger`の`SENSITIVE_KEYS`には未追加」
+という記載があったが、これは誤り。実コードでは
+`packages/logger/src/redaction.ts`の`SENSITIVE_KEYS`へ
+`authIpHashSecret`/`AUTH_IP_HASH_SECRET`の両方が既に追加済みであり
+（PR-03A初回実装時点から）、ログへ値が出力されるコードパスがあっても
+redactionが機能する。

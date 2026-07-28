@@ -84,7 +84,37 @@
   `@RequirePermissions("admin:manage")`をそのまま適用できる設計と
   なっている。
 
-## 7. PR-02で決着済みの事項（継続、参考情報）
+## 7. 極端に大きい同一IP同時バーストでのDB接続プール枯渇（review-fix、記録・部分対応）
+
+- 発見経緯：P0-4（IP単位Rate LimitのAtomic化）の並行Integration
+  Testを作成する過程で、既定の`ADMIN_LOGIN_IP_MAX_FAILURES=20`に対し
+  25件を完全同時（`Promise.all`）に送信すると、複数件が`503
+AUTH_SERVICE_UNAVAILABLE`を返すことを確認した（本来期待される
+  401/429ではなく）。
+- 原因：`pg_advisory_xact_lock`による同一IP直列化そのものは正しく
+  機能しているが、ロック待機中の各Transactionは（作業していなくても）
+  Postgres接続を1本ずつ保持し続けるため、Prismaの既定接続プール
+  （`num_cpus * 2 + 1` — 本検証環境では4 CPU→9接続）を超える人数が
+  完全同時に到達すると、接続待ちがPrismaの`$transaction`の
+  `maxWait`/`timeout`を超過し、エラーとして跳ね返る。
+- 本PRでの対応：`PrismaDbTransactionService`の`$transaction`
+  `maxWait`/`timeout`を既定（2000ms/5000ms）から10000ms/15000msへ
+  拡大し、多少のバーストには耐えるようにした。
+- 未対応（本PRのスコープ外、次PRへの引継ぎ）：接続プールサイズ
+  自体の拡大（`DATABASE_URL`の`connection_limit`）、またはArgon2
+  Verify（実/Dummyとも）をLock保持Transactionの外へ移す設計変更
+  （P0-4のCheck-then-Record原子性を壊さない形での再設計が必要 —
+  本PRでは時間的制約により見送った）が必要。
+- 統合テストでの扱い：`admin-auth-api.integration.spec.ts`の
+  P0-4並行テストは、この接続プール制約を回避するため
+  `ADMIN_LOGIN_IP_MAX_FAILURES=3`・6並行という縮小規模で実施し、
+  「並行要求が閾値をすり抜けない」という正しさの性質そのものは
+  確定的に検証している（縮小規模はインフラ制約を避けるためであり、
+  検証している性質は既定の閾値20でも同一）。既定閾値20・大規模
+  バーストでの完全な安定動作は、上記の接続プール拡大を行った上で
+  別途再検証することを推奨する。
+
+## 8. PR-02で決着済みの事項（継続、参考情報）
 
 `OPEN_QUESTIONS_PR02.md`に記載の事項（Testcontainers、NestJS DIと
 Vitestのesbuildトランスフォーム非互換、`turbo.json`のenv宣言運用等）は

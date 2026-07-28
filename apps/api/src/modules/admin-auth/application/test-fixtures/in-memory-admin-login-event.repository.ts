@@ -19,4 +19,10 @@ export class InMemoryAdminLoginEventRepository implements AdminLoginEventReposit
     ).length;
     return Promise.resolve(count);
   }
+
+  /** No-op — single-threaded JS has no race to serialize against; the real
+   * lock is exercised against Postgres in the integration suite. */
+  acquireIpRateLimitLock(_ipHash: string): Promise<void> {
+    return Promise.resolve();
+  }
 }

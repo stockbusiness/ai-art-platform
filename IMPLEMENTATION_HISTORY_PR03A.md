@@ -215,3 +215,91 @@ grep -rliE "ai_art_member_id|LineIdentity|LIFFLogin|LineWebhook|代理店|教室
   section 12）。
 - 旧PHP版（`team478a/ai-art-school`）は本セッションでは一切参照・
   clone・変更していない。
+
+---
+
+## 追加レビュー修正ラウンド（review-fix、`AI_ART_PLATFORM_PR03A_
+
+REVIEW_FIX_INSTRUCTIONS.md`対応）
+
+修正前HEAD：`6cbfdaa5a99b49345cde5579ad5e9d7f09a69fad`（PR #3, Draft）。
+
+### 実装順序
+
+1. P0-1（CSRF Timing-safe化）：`timingSafeStringEqual()`を新設し
+   `CsrfGuard`の2箇所の比較へ適用。Unit Test 5件追加。
+2. P0-2（Dummy Argon2 Verify）：`PasswordHasher`portへ`verifyDummy()`
+   を追加。`Argon2PasswordHasher`は固定Dummy PasswordのHashを遅延
+   生成・キャッシュして実装（ハードコードされたHash文字列ではなく、
+   実行時に`argon2.hash()`で生成 — Argon2ライブラリのVersion差異に
+   自動追従する）。401到達4経路（不明Email／Tenant不存在
+   ・SUSPENDED／Admin不存在／DISABLED）へ組み込み、Lockout・IP Rate
+   Limitedの429経路は意図的に対象外とした。
+3. P0-3/P0-4/P1-1（Atomic化＋Transaction境界）：3つを同時に設計する
+   必要があった（IP Lock保持中の処理をTransactionでラップする必要が
+   あるため）。`DbTransactionPort`（新設）＋Prismaの
+   `$transaction()`で`LoginAdminUseCase`全体を1つのTransactionへ
+   包み、`AdminUserRepository.recordFailedLoginAtomically()`
+   （単一UPDATE文でRead-Modify-Write回避）、
+   `AdminLoginEventRepository.acquireIpRateLimitLock()`
+   （`pg_advisory_xact_lock`）を新設。期待される401/429という
+   「正常な失敗」をTransaction内から`throw`すると、その失敗の監査
+   ログ自体もRollbackされてしまう問題に気づき、`{kind:
+"success"|"failure"}`の判別可能な戻り値をTransaction Callback内
+   から返し、Transaction外（コミット後）で初めて`throw`する設計へ
+   変更した。
+4. P0-5（Reverse Proxy）：`ADMIN_TRUST_PROXY_HOPS`を`apiEnvSchema`へ
+   追加（`superRefine`でproduction時必須化）、`configureApp()`で
+   Express `trust proxy`へ配線。
+5. P0-6/P0-7（Request ID相関・503化）：`requestIdMiddleware`を新設
+   し、`mapAdminAuthErrorToHttp()`のシグネチャを`(error,
+requestId)`へ変更（全Guard・Controllerの呼出箇所を追従修正）。
+   同時に、この関数のCatch-allブランチを401から503
+   `AUTH_SERVICE_UNAVAILABLE`へ変更した。
+6. P1-2/P1-3/P1-4（DB制約・Index追加）：`prisma/schema.prisma`へ
+   `@@index`を追加し`prisma migrate dev --create-only`でベース
+   Migrationを生成、CHECK制約8件を手動追記した新規Migration
+   （`20260728090611_pr03a_review_fix_hardening`）として追加
+   （既存2 Migrationは無編集）。
+7. P1-5（Bootstrap CLI）：成功メッセージ・重複エラーメッセージ双方
+   からEmailを除去。
+
+### 発生した問題と対応
+
+1. **既存統合テストのFixture値がHash形式CHECKに違反**：P1-4の追加
+   直後、既存`admin-auth-repository.integration.spec.ts`が
+   `tokenHash: "same-hash"`、`ipHash: "target-ip"`等の記述的な
+   非Hex64文字列を使っていたことが判明し、UNIQUE制約テストが
+   CHECK制約違反で失敗した。すべて有効なHex64値（`"1".repeat(64)`
+   等）へ置き換えて解消。
+2. **並行Integration TestがDB接続プールを枯渇させ503を誘発**：P0-4の
+   並行テストを既定閾値20・25並行という規模で書いたところ、
+   `pg_advisory_xact_lock`によるIP単位直列化とArgon2 Verify（Lock
+   保持中に実行される設計のため）の組み合わせにより、4 CPU環境の
+   既定Prisma接続プール（9接続）が枯渇し、複数リクエストが本来の
+   401/429ではなく503を返す事象を確認した。対応：(a)
+   `PrismaDbTransactionService`の`$transaction`
+   `maxWait`/`timeout`を10000ms/15000msへ拡大（本番運用上も
+   セーフティネットとして有効）。(b) テスト自体は
+   `ADMIN_LOGIN_IP_MAX_FAILURES=3`・6並行という現実的な規模へ
+   縮小し、検証対象の性質（並行要求が閾値をすり抜けない）は変えず
+   安定させた。根本対応（接続プールサイズ拡大、または
+   Verify処理をLock保持Transaction外へ移す設計変更）は次PRへ
+   引き継ぐ（`OPEN_QUESTIONS_PR03A.md`項目7）。
+3. **`DATABASE_SCHEMA_PR03A.md`の誤記を発見**：レビュー指示書
+   自体が指摘していた通り、旧版に「`AUTH_IP_HASH_SECRET`は
+   `packages/logger`の`SENSITIVE_KEYS`に未追加」という誤った記載が
+   あった。実コードは初回実装時点から追加済みであったため、文書側
+   の誤記を訂正した（コード変更は不要）。
+4. **`@ai-art-platform/config`/`@ai-art-platform/api-contracts`の
+   ビルドキャッシュ未更新によるTypeScriptエラー**：`ApiEnv`型・
+   `AdminAuthErrorCode`型を変更した直後、依存する`apps/api`側の
+   `tsc`が古い`dist/*.d.ts`を参照してエラーになった。各パッケージを
+   個別に`pnpm --filter ... run build`することで解消（既存の
+   Monorepoビルド構成の制約であり、新規のバグではない）。
+
+### 混入・健全性チェック（再実施）
+
+初回実装時と同一のGrepパターンをreview-fixで新規・変更した全ファイル
+へ再実施し、Secret・PHP参照・PR-04以降キーワードいずれも該当なし
+（"Endpoint"の部分文字列マッチによる誤検知のみ、初回と同様）を確認。

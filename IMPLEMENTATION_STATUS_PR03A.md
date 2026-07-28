@@ -11,10 +11,11 @@
 
 ## コミットSHA
 
-| コミット       | 内容                                                                                     |
-| -------------- | ---------------------------------------------------------------------------------------- |
-| `7c7e19b`      | PR-03A本体実装（Admin認証・DB保存型Session・CSRF・Lockout・RBAC・Bootstrap CLI・CI拡張） |
-| （本コミット） | 提出物11文書の追加                                                                       |
+| コミット             | 内容                                                                                                                          |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `7c7e19b`            | PR-03A本体実装（Admin認証・DB保存型Session・CSRF・Lockout・RBAC・Bootstrap CLI・CI拡張）                                      |
+| `3280eaf`〜`6cbfdaa` | 提出物11文書の追加、CI結果追記（PR #3作成まで）                                                                               |
+| （本ラウンド）       | `AI_ART_PLATFORM_PR03A_REVIEW_FIX_INSTRUCTIONS.md`に基づく追加レビュー修正（P0-1〜P0-7, P1-1〜P1-5）＋新規Migration＋文書更新 |
 
 ## スコープ
 
@@ -27,21 +28,24 @@ PR-03B以降として今回実装していない。
 
 ## 実装内容サマリ
 
-| 区分                        | 内容                                                                                                                                                                                                             |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Migration                   | `20260728070941_pr03a_admin_auth_foundation`（`admin_users`/`admin_sessions`/`admin_login_events`の新規追加。PR-02のMigrationは無編集）                                                                          |
-| packages/domain/admin-auth  | `AdminUser`, `AdminSession`, `AdminEmail`, `AdminName`, `AdminRole`/`AdminStatus`, `PasswordPolicy`, `Permission`/`RolePermissionMap`, Repository port群。フレームワーク非依存                                   |
-| packages/api-contracts      | `adminLoginRequestSchema`, `adminLoginResponseSchema`, `adminMeResponseSchema`, `adminSummarySchema`, `adminRoleSchema`, `adminAuthErrorCodeSchema`                                                              |
-| packages/config             | `apiEnvSchema`へ`ADMIN_WEB_ORIGIN`/`ADMIN_SESSION_TTL_SECONDS`/`ADMIN_LOGIN_WINDOW_SECONDS`/`ADMIN_LOGIN_ACCOUNT_MAX_FAILURES`/`ADMIN_LOGIN_IP_MAX_FAILURES`/`ADMIN_LOCKOUT_SECONDS`/`AUTH_IP_HASH_SECRET`を追加 |
-| apps/api/modules/admin-auth | Application 4 UseCase、Infrastructure（Argon2id Hasher、Opaque Session Token生成/Hash、3 Prisma Repository）、Presentation（Controller 3 Endpoint、4 Guard、2 Decorator）                                        |
-| Bootstrap CLI               | `pnpm admin:bootstrap`（`prisma/admin-bootstrap.ts`）。最初のSUPER_ADMINまたはTenant管理者を安全に作成                                                                                                           |
-| CI                          | Database jobへMigration再実行no-op確認、Bootstrap CLI実行（成功＋重複拒否）を追加。Quality/Database jobの構成自体は維持（3 job）                                                                                 |
-| 設計文書                    | `docs/architecture/{ADMIN_AUTH_POLICY,RBAC_POLICY}.md`、`docs/security/SESSION_COOKIE_CSRF_POLICY.md`、`docs/development/ADMIN_BOOTSTRAP.md`                                                                     |
+| 区分                        | 内容                                                                                                                                                                                                                                                                                                                            |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Migration                   | `20260728070941_pr03a_admin_auth_foundation`（`admin_users`/`admin_sessions`/`admin_login_events`の新規追加。PR-02のMigrationは無編集）                                                                                                                                                                                         |
+| Migration（review-fix）     | `20260728090611_pr03a_review_fix_hardening`（CHECK制約1件、Hash形式CHECK制約7件、Index10件を追加。既存2 Migrationは無編集）                                                                                                                                                                                                     |
+| packages/domain/admin-auth  | `AdminUser`, `AdminSession`, `AdminEmail`, `AdminName`, `AdminRole`/`AdminStatus`, `PasswordPolicy`, `Permission`/`RolePermissionMap`, Repository port群。フレームワーク非依存                                                                                                                                                  |
+| packages/api-contracts      | `adminLoginRequestSchema`, `adminLoginResponseSchema`, `adminMeResponseSchema`, `adminSummarySchema`, `adminRoleSchema`, `adminAuthErrorCodeSchema`                                                                                                                                                                             |
+| packages/config             | `apiEnvSchema`へ`ADMIN_WEB_ORIGIN`/`ADMIN_SESSION_TTL_SECONDS`/`ADMIN_LOGIN_WINDOW_SECONDS`/`ADMIN_LOGIN_ACCOUNT_MAX_FAILURES`/`ADMIN_LOGIN_IP_MAX_FAILURES`/`ADMIN_LOCKOUT_SECONDS`/`AUTH_IP_HASH_SECRET`を追加                                                                                                                |
+| apps/api/modules/admin-auth | Application 4 UseCase、Infrastructure（Argon2id Hasher、Opaque Session Token生成/Hash、3 Prisma Repository）、Presentation（Controller 3 Endpoint、4 Guard、2 Decorator）                                                                                                                                                       |
+| Bootstrap CLI               | `pnpm admin:bootstrap`（`prisma/admin-bootstrap.ts`）。最初のSUPER_ADMINまたはTenant管理者を安全に作成                                                                                                                                                                                                                          |
+| CI                          | Database jobへMigration再実行no-op確認、Bootstrap CLI実行（成功＋重複拒否）を追加。Quality/Database jobの構成自体は維持（3 job）                                                                                                                                                                                                |
+| 設計文書                    | `docs/architecture/{ADMIN_AUTH_POLICY,RBAC_POLICY}.md`、`docs/security/SESSION_COOKIE_CSRF_POLICY.md`、`docs/development/ADMIN_BOOTSTRAP.md`                                                                                                                                                                                    |
+| review-fix修正              | P0-1 Timing-safe CSRF、P0-2 Dummy Argon2 Verify、P0-3 Account Lockout Atomic化、P0-4 IP Rate Limit Atomic化（`pg_advisory_xact_lock`）、P0-5 `ADMIN_TRUST_PROXY_HOPS`、P0-6 Request ID相関、P0-7 Infrastructure障害→503、P1-1 Login Transaction境界、P1-2/P1-4 DB CHECK制約追加、P1-3 Index追加、P1-5 Bootstrap CLI Email非表示 |
 
 ## 実行コマンドと結果
 
-すべて本ブランチのコミット `7c7e19b`（本体実装）に対し、真のClean Clone
-環境で検証済み（詳細は `TEST_RESULTS_PR03A.md`）。
+初回実装ラウンドはコミット `7c7e19b`、review-fixラウンドは本書と
+同時にコミットされる最新HEADに対し、いずれも真のClean Clone環境で
+検証済み（詳細は `TEST_RESULTS_PR03A.md`）。
 
 ```bash
 corepack enable
@@ -51,14 +55,14 @@ pnpm db:validate                 # 成功
 pnpm format:check                # 成功
 pnpm lint                        # 成功
 pnpm typecheck                   # 成功
-pnpm test                        # 成功（202テスト、42ファイル）
+pnpm test                        # 成功（234テスト、45ファイル）
 pnpm build                       # 成功（11/11 workspace）
 
-# Databaseあり環境（空DBへPR-02→PR-03Aの順に適用）
-pnpm db:migrate:deploy           # 成功（2 migration適用・2回目は no-op）
+# Databaseあり環境（空DBへPR-02→PR-03A→review-fixの順に適用）
+pnpm db:migrate:deploy           # 成功（3 migration適用・2回目は no-op）
 pnpm db:seed                     # 成功（冪等）
-pnpm admin:bootstrap             # 成功（初回SUPER_ADMIN作成、2回目は重複拒否で失敗）
-pnpm test:integration            # 成功（81テスト、6ファイル）
+pnpm admin:bootstrap             # 成功（初回SUPER_ADMIN作成、2回目は重複拒否で失敗。Emailは出力しない）
+pnpm test:integration            # 成功（99テスト、7ファイル）
 ```
 
 CI実行結果（Ubuntu Quality / Windows Quality / Database job）は
@@ -80,6 +84,10 @@ CI実行結果（Ubuntu Quality / Windows Quality / Database job）は
   `OPEN_QUESTIONS_PR03A.md`参照）。CIの`database` jobはGitHub
   Actionsのpostgresサービスコンテナを使うため、Testcontainersに依存
   しない設計とした。
+- 極端に大きい同一IP完全同時バースト（既定閾値20に対し25並行等）
+  でのDB接続プールサイズ拡張・Argon2 Verifyの Lock保持Transaction外
+  への移動（`OPEN_QUESTIONS_PR03A.md`項目7参照、review-fixで発見・
+  Transaction Timeout拡大のみ対応済み、根本対応は次PRへ引継ぎ）。
 
 ## 未確認事項
 
@@ -110,7 +118,20 @@ CI実行結果（Ubuntu Quality / Windows Quality / Database job）は
    `admin_login_events`テーブルの追加によって再発する構造だったため、
    既存の`tenant-repository.integration.spec.ts`／
    `public-tenant-api.integration.spec.ts`の`beforeEach`へ子テーブルの
-   削除を先に追加して予防した。
+   削除を先に追加して予防した。4.（review-fixラウンド）既存の`admin-auth-repository.integration
+.spec.ts`が`tokenHash`/`csrfTokenHash`/`ipHash`へ`"same-hash"`
+   `"target-ip"`等の記述的な非Hex文字列を使っていたため、P1-4の
+   Hash形式CHECK制約を追加した時点でこれらのテストが（意図した
+   UNIQUE制約違反ではなく）CHECK制約違反で失敗するようになった。
+   すべて有効なHex64値へ置き換えて解消した。5.（review-fixラウンド）P0-4のIP Rate Limit並行Integration Testを
+   既定閾値20・25並行で書いたところ、`pg_advisory_xact_lock`による
+   同一IP直列化とArgon2 Verify（Lock保持中に実行）の組み合わせで
+   Prismaの既定接続プール（4 CPU環境で9接続）が枯渇し、複数件が
+   `503`を返す事象を発見した。`$transaction`の`maxWait`/`timeout`を
+   拡大する対応を行った上で、テスト自体は閾値3・6並行という現実的な
+   規模へ縮小し、検証している正しさの性質（並行要求が閾値を
+   すり抜けない）は変えずに安定させた。詳細は
+   `OPEN_QUESTIONS_PR03A.md`項目7参照。
 
 ## 次PRへの引継ぎ
 

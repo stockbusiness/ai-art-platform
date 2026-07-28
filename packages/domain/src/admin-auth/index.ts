@@ -24,7 +24,11 @@ export type { AdminUserProps, CreateAdminUserInput } from "./admin-user.js";
 export { AdminSession } from "./admin-session.js";
 export type { AdminSessionProps, CreateAdminSessionInput } from "./admin-session.js";
 export { ADMIN_USER_REPOSITORY } from "./admin-user-repository.js";
-export type { AdminUserRepository } from "./admin-user-repository.js";
+export type {
+  AdminUserRepository,
+  AtomicFailedLoginResult,
+  DbTransactionHandle,
+} from "./admin-user-repository.js";
 export { ADMIN_SESSION_REPOSITORY } from "./admin-session-repository.js";
 export type { AdminSessionRepository } from "./admin-session-repository.js";
 export {

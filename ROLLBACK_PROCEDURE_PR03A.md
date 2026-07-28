@@ -12,7 +12,8 @@
 
 - Base（`main`、PR-02マージ済み）: `ff0578b1126a51ef688b227212bd1b7db526ae53`
 - PR-03A本体実装: `7c7e19b`
-- 提出物11文書: 本コミット
+- 提出物11文書〜PR #3作成: `3280eaf`〜`6cbfdaa`
+- 追加レビュー修正（本ラウンド）: 完了報告の「最新Commit SHA」参照
 
 ## 前提
 
@@ -60,9 +61,36 @@ PR-03A全体を対象としたrevertを行うこと。
 
 ## Migration（Prismaの自動Down Migration非対応について）
 
-Prismaは自動Down Migrationを生成しない。PR-03Aで導入したMigration
-（`20260728070941_pr03a_admin_auth_foundation`）をDBから取り除く
-必要が生じた場合の手動SQL：
+Prismaは自動Down Migrationを生成しない。review-fixラウンドで追加した
+Migration（`20260728090611_pr03a_review_fix_hardening`）のみを取り除く
+場合の手動SQL（テーブル自体はそのまま、追加したCHECK制約・Indexのみ
+削除）：
+
+```sql
+ALTER TABLE "admin_login_events" DROP CONSTRAINT IF EXISTS "admin_login_events_success_failure_reason_check";
+ALTER TABLE "admin_sessions" DROP CONSTRAINT IF EXISTS "admin_sessions_token_hash_format_check";
+ALTER TABLE "admin_sessions" DROP CONSTRAINT IF EXISTS "admin_sessions_csrf_token_hash_format_check";
+ALTER TABLE "admin_sessions" DROP CONSTRAINT IF EXISTS "admin_sessions_ip_hash_format_check";
+ALTER TABLE "admin_sessions" DROP CONSTRAINT IF EXISTS "admin_sessions_user_agent_hash_format_check";
+ALTER TABLE "admin_login_events" DROP CONSTRAINT IF EXISTS "admin_login_events_email_hash_format_check";
+ALTER TABLE "admin_login_events" DROP CONSTRAINT IF EXISTS "admin_login_events_ip_hash_format_check";
+ALTER TABLE "admin_login_events" DROP CONSTRAINT IF EXISTS "admin_login_events_user_agent_hash_format_check";
+DROP INDEX IF EXISTS "admin_login_events_created_at_idx";
+DROP INDEX IF EXISTS "admin_login_events_admin_user_id_created_at_idx";
+DROP INDEX IF EXISTS "admin_login_events_email_hash_created_at_idx";
+DROP INDEX IF EXISTS "admin_login_events_ip_hash_success_created_at_idx";
+DROP INDEX IF EXISTS "admin_sessions_admin_user_id_idx";
+DROP INDEX IF EXISTS "admin_sessions_expires_at_idx";
+DROP INDEX IF EXISTS "admin_sessions_revoked_at_idx";
+DROP INDEX IF EXISTS "admin_users_tenant_id_idx";
+DROP INDEX IF EXISTS "admin_users_status_idx";
+DROP INDEX IF EXISTS "admin_users_locked_until_idx";
+DELETE FROM "_prisma_migrations" WHERE migration_name = '20260728090611_pr03a_review_fix_hardening';
+```
+
+PR-03A全体（初回実装Migration含む）を取り除く必要が生じた場合の
+手動SQL（review-fixのMigrationはテーブル自体を追加していないため、
+上記を先に、または合わせて実行してから以下を実行する）：
 
 ```sql
 -- 依存関係の逆順で削除（CHECK制約・部分UNIQUE Indexはテーブルの
@@ -74,6 +102,7 @@ DROP TYPE IF EXISTS "AdminLoginFailureReason";
 DROP TYPE IF EXISTS "AdminStatus";
 DROP TYPE IF EXISTS "AdminRole";
 DELETE FROM "_prisma_migrations" WHERE migration_name = '20260728070941_pr03a_admin_auth_foundation';
+DELETE FROM "_prisma_migrations" WHERE migration_name = '20260728090611_pr03a_review_fix_hardening';
 ```
 
 このSQLは`tenants`テーブル自体には触れないため、PR-02のMigration
@@ -118,6 +147,28 @@ Table／EnumをDROPしないこと。Backup確認・Rollback SQLレビュー・
 - 一般User／LINE等の範囲外機能混入（本PRでは混入なしを確認済み）
 - staging／productionへ無断Migrationする（本PRでは一切実施していない）
 - 既存PHP DBへ影響する（本PRでは接続すらしていない）
+
+review-fixラウンドで追加された基準（`AI_ART_PLATFORM_PR03A_REVIEW_FIX_
+INSTRUCTIONS.md`第9章）：
+
+- 並行失敗でCountが欠落する（本PRではAtomic UPDATE + Advisory Lockで
+  対応、並行Integration Testで確認済み）
+- Rate Limitを並行要求で回避可能（本PRでは`pg_advisory_xact_lock`で
+  対応、並行Integration Testで確認済み）
+- Proxy Headerを任意偽装可能（本PRでは`ADMIN_TRUST_PROXY_HOPS`既定0で
+  信頼せず、統合テストで確認済み）
+- CSRFが通常比較のまま（本PRでは`timingSafeStringEqual`へ置換済み）
+- DB障害が401（本PRでは503 `AUTH_SERVICE_UNAVAILABLE`へ変更済み、
+  DB停止統合テストで確認済み）
+- Request ID不一致（本PRではHTTPレスポンスとDB行のrequestIdが一致
+  することを統合テストで確認済み）
+- Transaction途中失敗でSession等が残る（本PRではFault Injection
+  テストでRollbackを確認済み）
+- Login Event不整合をDBが許可する（本PRではCHECK制約をRaw SQLで
+  検証済み）
+- Secret／Password／Token／Emailが不要にログ出力される（本PRでは
+  Bootstrap CLIのEmail非表示化を実CLIプロセスの標準出力/エラー出力
+  レベルで確認済み）
 
 ## 影響範囲の確認
 

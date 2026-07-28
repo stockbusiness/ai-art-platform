@@ -2,6 +2,7 @@ import { AdminUnauthenticatedError } from "@ai-art-platform/domain";
 import { CanActivate, ExecutionContext, Injectable } from "@nestjs/common";
 import type { Request } from "express";
 
+import { requestIdOf } from "../../../infrastructure/http/request-id.js";
 import { AuthenticateSessionUseCase } from "../application/authenticate-session.use-case.js";
 
 import { mapAdminAuthErrorToHttp } from "./admin-auth-error.mapper.js";
@@ -26,13 +27,16 @@ export class AdminAuthGuard implements CanActivate {
     const req = context.switchToHttp().getRequest<RequestWithAuthenticatedAdmin>();
     const rawToken = req.cookies?.[SESSION_COOKIE_NAME] as unknown;
     if (typeof rawToken !== "string" || rawToken.length === 0) {
-      throw mapAdminAuthErrorToHttp(new AdminUnauthenticatedError("Missing session cookie"));
+      throw mapAdminAuthErrorToHttp(
+        new AdminUnauthenticatedError("Missing session cookie"),
+        requestIdOf(req),
+      );
     }
 
     try {
       req[AUTHENTICATED_ADMIN_REQUEST_KEY] = await this.authenticateSession.execute(rawToken);
     } catch (error: unknown) {
-      throw mapAdminAuthErrorToHttp(error);
+      throw mapAdminAuthErrorToHttp(error, requestIdOf(req));
     }
     return true;
   }

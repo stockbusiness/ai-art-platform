@@ -129,6 +129,11 @@ model AdminUser {
   sessions    AdminSession[]
   loginEvents AdminLoginEvent[]
 
+  // review-fix P1-3: lookups by Tenant, active-status filtering, and the
+  // Lockout check all scan by one of these columns.
+  @@index([tenantId])
+  @@index([status])
+  @@index([lockedUntil])
   @@map("admin_users")
 }
 
@@ -153,6 +158,12 @@ model AdminSession {
 
   adminUser AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
+  // review-fix P1-3: Postgres does not auto-index FK columns, and
+  // AuthenticateSessionUseCase's validity check filters by expiresAt/
+  // revokedAt on every authenticated request.
+  @@index([adminUserId])
+  @@index([expiresAt])
+  @@index([revokedAt])
   @@map("admin_sessions")
 }
 
@@ -175,5 +186,12 @@ model AdminLoginEvent {
   adminUser AdminUser? @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   tenant    Tenant?    @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
+  // review-fix P1-3: (ipHash, success, createdAt) backs the IP-level rate
+  // limit's countRecentFailuresByIpHash query; the others back per-admin
+  // history and audit queries by time.
+  @@index([createdAt])
+  @@index([adminUserId, createdAt])
+  @@index([emailHash, createdAt])
+  @@index([ipHash, success, createdAt])
   @@map("admin_login_events")
 }

@@ -1,9 +1,14 @@
-import { AdminSession, type AdminSessionRepository } from "@ai-art-platform/domain";
+import {
+  AdminSession,
+  type AdminSessionRepository,
+  type DbTransactionHandle,
+} from "@ai-art-platform/domain";
 import { Injectable } from "@nestjs/common";
 
 import { PrismaService } from "../../../infrastructure/database/prisma.service.js";
 
 import { toCreateInput, toDomainAdminSession, toUpdateInput } from "./admin-session.mapper.js";
+import { clientFor } from "./prisma-tx.js";
 
 @Injectable()
 export class PrismaAdminSessionRepository implements AdminSessionRepository {
@@ -14,8 +19,8 @@ export class PrismaAdminSessionRepository implements AdminSessionRepository {
     return row ? toDomainAdminSession(row) : null;
   }
 
-  async create(session: AdminSession): Promise<void> {
-    await this.prisma.client.adminSession.create({
+  async create(session: AdminSession, tx?: DbTransactionHandle): Promise<void> {
+    await clientFor(this.prisma.client, tx).adminSession.create({
       data: toCreateInput(session, session.ipHash, session.userAgentHash),
     });
   }

@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import {
   adminLoginRequestSchema,
   type AdminLoginResponse,
@@ -11,6 +9,7 @@ import { Body, Controller, Get, HttpCode, Inject, Post, Req, Res, UseGuards } fr
 import type { Request, Response } from "express";
 
 import { API_ENV } from "../../../infrastructure/config/api-config.module.js";
+import { requestIdOf } from "../../../infrastructure/http/request-id.js";
 import type { AuthenticatedAdminContext } from "../application/authenticated-admin-context.js";
 import { GetCurrentAdminUseCase } from "../application/get-current-admin.use-case.js";
 import { LoginAdminUseCase } from "../application/login-admin.use-case.js";
@@ -63,7 +62,10 @@ export class AdminAuthController {
     // this endpoint — no separate 400).
     const parsed = adminLoginRequestSchema.safeParse(body);
     if (!parsed.success) {
-      throw mapAdminAuthErrorToHttp(new AdminAuthenticationFailedError("Invalid request body"));
+      throw mapAdminAuthErrorToHttp(
+        new AdminAuthenticationFailedError("Invalid request body"),
+        requestIdOf(req),
+      );
     }
 
     try {
@@ -73,7 +75,7 @@ export class AdminAuthController {
         password: parsed.data.password,
         ip: clientIp(req),
         userAgent: userAgentOf(req),
-        requestId: randomUUID(),
+        requestId: requestIdOf(req),
       });
 
       setSessionCookies(
@@ -96,7 +98,7 @@ export class AdminAuthController {
         },
       };
     } catch (error: unknown) {
-      throw mapAdminAuthErrorToHttp(error);
+      throw mapAdminAuthErrorToHttp(error, requestIdOf(req));
     }
   }
 
@@ -122,9 +124,10 @@ export class AdminAuthController {
 }
 
 /**
- * Express's `req.ip` respects the `trust proxy` setting (unset here, so it
- * falls back to the direct socket address) — good enough for PR-03A,
- * which does not sit behind a documented reverse-proxy chain yet.
+ * Express's `req.ip` respects the `trust proxy` setting configured in
+ * `configureApp()` from `ADMIN_TRUST_PROXY_HOPS` (review-fix P0-5) — with
+ * it at 0 (the default), this is the raw socket address; with an explicit
+ * hop count, it's the corresponding `X-Forwarded-For` entry.
  */
 function clientIp(req: Request): string {
   return req.ip ?? req.socket.remoteAddress ?? "unknown";

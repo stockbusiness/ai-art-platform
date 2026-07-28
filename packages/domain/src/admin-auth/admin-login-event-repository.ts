@@ -1,3 +1,5 @@
+import type { DbTransactionHandle } from "./admin-user-repository.js";
+
 /**
  * Mirrors the DB enum AdminLoginFailureReason — recorded for audit only,
  * never returned to the caller as-is (see AdminAuthenticationFailedError /
@@ -35,10 +37,25 @@ export const ADMIN_LOGIN_EVENT_REPOSITORY = "ADMIN_LOGIN_EVENT_REPOSITORY";
  * every row is immutable once written.
  */
 export interface AdminLoginEventRepository {
-  record(input: RecordAdminLoginEventInput): Promise<void>;
+  record(input: RecordAdminLoginEventInput, tx?: DbTransactionHandle): Promise<void>;
   /**
    * Counts failed login attempts from a given IP hash within the last
    * `windowSeconds`, for the IP-level rate limit (section 3.5).
    */
-  countRecentFailuresByIpHash(ipHash: string, now: Date, windowSeconds: number): Promise<number>;
+  countRecentFailuresByIpHash(
+    ipHash: string,
+    now: Date,
+    windowSeconds: number,
+    tx?: DbTransactionHandle,
+  ): Promise<number>;
+  /**
+   * Serializes concurrent login attempts from the same `ipHash` within the
+   * current DB transaction — a Postgres session-level advisory lock
+   * (`pg_advisory_xact_lock`) scoped to `tx`, released automatically at
+   * commit/rollback. Must be called (and awaited) before
+   * `countRecentFailuresByIpHash` so the count-then-record sequence for
+   * one IP can never race with another attempt from the same IP; distinct
+   * IP hashes never block each other (P0-4).
+   */
+  acquireIpRateLimitLock(ipHash: string, tx: DbTransactionHandle): Promise<void>;
 }

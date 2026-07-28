@@ -3,9 +3,17 @@ import {
   type AdminEmail,
   type AdminUser,
   type AdminUserRepository,
+  type AtomicFailedLoginResult,
 } from "@ai-art-platform/domain";
 
-/** In-memory AdminUserRepository test double — no Prisma, no NestJS, no real DB. */
+/**
+ * In-memory AdminUserRepository test double — no Prisma, no NestJS, no
+ * real DB. Concurrency-safety of `recordFailedLoginAtomically` /
+ * `recordSuccessfulLoginAtomically` is meaningless here (single-threaded
+ * JS, no real races) — those are exercised for real against Postgres in
+ * the integration suite; this double only needs to match the domain
+ * entity's own state transitions.
+ */
 export class InMemoryAdminUserRepository implements AdminUserRepository {
   private byId = new Map<string, AdminUser>();
 
@@ -44,6 +52,30 @@ export class InMemoryAdminUserRepository implements AdminUserRepository {
 
   update(admin: AdminUser): Promise<void> {
     this.byId.set(admin.id, admin);
+    return Promise.resolve();
+  }
+
+  recordFailedLoginAtomically(
+    id: string,
+    params: { now: Date; maxFailures: number; lockoutSeconds: number },
+  ): Promise<AtomicFailedLoginResult> {
+    const admin = this.byId.get(id);
+    if (!admin) {
+      throw new Error(`recordFailedLoginAtomically: admin ${id} not found`);
+    }
+    admin.recordFailedLogin(params.now, params.maxFailures, params.lockoutSeconds);
+    return Promise.resolve({
+      failedLoginCount: admin.failedLoginCount,
+      lockedUntil: admin.lockedUntil,
+    });
+  }
+
+  recordSuccessfulLoginAtomically(id: string, now: Date): Promise<void> {
+    const admin = this.byId.get(id);
+    if (!admin) {
+      throw new Error(`recordSuccessfulLoginAtomically: admin ${id} not found`);
+    }
+    admin.recordSuccessfulLogin(now);
     return Promise.resolve();
   }
 }

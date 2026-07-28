@@ -297,6 +297,136 @@ describe("Admin Auth Repositories (section 13.2)", () => {
     });
   });
 
+  describe("admin_login_events.success/failure_reason CHECK (review-fix P1-2)", () => {
+    const POSTGRES_CHECK_VIOLATION = "23514";
+
+    async function rawInsertLoginEvent(overrides: {
+      success: boolean;
+      failureReason: string | null;
+    }): Promise<unknown> {
+      return client.$executeRawUnsafe(
+        `INSERT INTO "admin_login_events" (id, email_hash, success, failure_reason, request_id, created_at)
+         VALUES (gen_random_uuid(), $1, $2, $3::"AdminLoginFailureReason", $4, now())`,
+        "e".repeat(64),
+        overrides.success,
+        overrides.failureReason,
+        randomUUID(),
+      );
+    }
+
+    it("rejects success=true with a non-NULL failure_reason", async () => {
+      await expect(
+        rawInsertLoginEvent({ success: true, failureReason: "INVALID_CREDENTIALS" }),
+      ).rejects.toMatchObject({ meta: { code: POSTGRES_CHECK_VIOLATION } });
+    });
+
+    it("rejects success=false with a NULL failure_reason", async () => {
+      await expect(
+        rawInsertLoginEvent({ success: false, failureReason: null }),
+      ).rejects.toMatchObject({ meta: { code: POSTGRES_CHECK_VIOLATION } });
+    });
+
+    it("accepts success=true with a NULL failure_reason", async () => {
+      await expect(
+        rawInsertLoginEvent({ success: true, failureReason: null }),
+      ).resolves.toBeDefined();
+    });
+
+    it("accepts success=false with a non-NULL failure_reason", async () => {
+      await expect(
+        rawInsertLoginEvent({ success: false, failureReason: "ACCOUNT_LOCKED" }),
+      ).resolves.toBeDefined();
+    });
+  });
+
+  describe("*_hash format CHECK constraints — hex64 (review-fix P1-4)", () => {
+    const POSTGRES_CHECK_VIOLATION = "23514";
+    const VALID_HEX64 = "a".repeat(64);
+
+    it("rejects a session token_hash that is not 64 lowercase hex characters", async () => {
+      const tenant = newTenant("acme");
+      await tenantRepository.create(tenant);
+      const admin = newAdmin({
+        tenantId: tenant.id,
+        email: "hashcheck@example.com",
+        role: "TENANT_OWNER",
+      });
+      await adminUserRepository.create(admin);
+
+      await expect(
+        client.$executeRawUnsafe(
+          `INSERT INTO "admin_sessions" (id, admin_user_id, token_hash, csrf_token_hash, expires_at, last_seen_at, updated_at)
+           VALUES (gen_random_uuid(), $1::uuid, 'not-a-valid-hash', $2, now() + interval '1 hour', now(), now())`,
+          admin.id,
+          VALID_HEX64,
+        ),
+      ).rejects.toMatchObject({ meta: { code: POSTGRES_CHECK_VIOLATION } });
+    });
+
+    it("rejects an uppercase-hex session token_hash (lowercase-only)", async () => {
+      const tenant = newTenant("acme");
+      await tenantRepository.create(tenant);
+      const admin = newAdmin({
+        tenantId: tenant.id,
+        email: "hashcheck2@example.com",
+        role: "TENANT_OWNER",
+      });
+      await adminUserRepository.create(admin);
+
+      await expect(
+        client.$executeRawUnsafe(
+          `INSERT INTO "admin_sessions" (id, admin_user_id, token_hash, csrf_token_hash, expires_at, last_seen_at, updated_at)
+           VALUES (gen_random_uuid(), $1::uuid, $2, $3, now() + interval '1 hour', now(), now())`,
+          admin.id,
+          "A".repeat(64),
+          VALID_HEX64,
+        ),
+      ).rejects.toMatchObject({ meta: { code: POSTGRES_CHECK_VIOLATION } });
+    });
+
+    it("allows a NULL session ip_hash/user_agent_hash but rejects a malformed non-NULL one", async () => {
+      const tenant = newTenant("acme");
+      await tenantRepository.create(tenant);
+      const admin = newAdmin({
+        tenantId: tenant.id,
+        email: "hashcheck3@example.com",
+        role: "TENANT_OWNER",
+      });
+      await adminUserRepository.create(admin);
+
+      await expect(
+        client.$executeRawUnsafe(
+          `INSERT INTO "admin_sessions" (id, admin_user_id, token_hash, csrf_token_hash, expires_at, last_seen_at, ip_hash, updated_at)
+           VALUES (gen_random_uuid(), $1::uuid, $2, $3, now() + interval '1 hour', now(), NULL, now())`,
+          admin.id,
+          VALID_HEX64,
+          VALID_HEX64,
+        ),
+      ).resolves.toBeDefined();
+
+      await expect(
+        client.$executeRawUnsafe(
+          `INSERT INTO "admin_sessions" (id, admin_user_id, token_hash, csrf_token_hash, expires_at, last_seen_at, ip_hash, updated_at)
+           VALUES (gen_random_uuid(), $1::uuid, $2, $3, now() + interval '1 hour', now(), 'short', now())`,
+          admin.id,
+          "b".repeat(64),
+          VALID_HEX64,
+        ),
+      ).rejects.toMatchObject({ meta: { code: POSTGRES_CHECK_VIOLATION } });
+    });
+
+    it("rejects a malformed admin_login_events.email_hash", async () => {
+      await expect(
+        client.$executeRawUnsafe(
+          `INSERT INTO "admin_login_events" (id, email_hash, success, request_id, created_at)
+           VALUES (gen_random_uuid(), $1, true, $2, now())`,
+          "too-short",
+          randomUUID(),
+        ),
+      ).rejects.toMatchObject({ meta: { code: POSTGRES_CHECK_VIOLATION } });
+    });
+  });
+
   describe("AdminSession persistence", () => {
     it("rejects a duplicate token_hash", async () => {
       const tenant = newTenant("acme");
@@ -308,11 +438,15 @@ describe("Admin Auth Repositories (section 13.2)", () => {
       });
       await adminUserRepository.create(admin);
 
+      // token_hash/csrf_token_hash must satisfy the hex64-format CHECK
+      // constraint (review-fix P1-4) — a plain descriptive literal like
+      // "same-hash" would violate it, not the UNIQUE index this test
+      // actually targets.
       const sessionA = AdminSession.create({
         id: randomUUID(),
         adminUserId: admin.id,
-        tokenHash: "same-hash",
-        csrfTokenHash: "csrf-a",
+        tokenHash: "1".repeat(64),
+        csrfTokenHash: "a".repeat(64),
         ipHash: null,
         userAgentHash: null,
         now: new Date(),
@@ -321,8 +455,8 @@ describe("Admin Auth Repositories (section 13.2)", () => {
       const sessionB = AdminSession.create({
         id: randomUUID(),
         adminUserId: admin.id,
-        tokenHash: "same-hash",
-        csrfTokenHash: "csrf-b",
+        tokenHash: "1".repeat(64),
+        csrfTokenHash: "b".repeat(64),
         ipHash: null,
         userAgentHash: null,
         now: new Date(),
@@ -345,8 +479,8 @@ describe("Admin Auth Repositories (section 13.2)", () => {
       const session = AdminSession.create({
         id: randomUUID(),
         adminUserId: admin.id,
-        tokenHash: "token-hash-1",
-        csrfTokenHash: "csrf-1",
+        tokenHash: "2".repeat(64),
+        csrfTokenHash: "c".repeat(64),
         ipHash: null,
         userAgentHash: null,
         now: new Date(),
@@ -357,7 +491,7 @@ describe("Admin Auth Repositories (section 13.2)", () => {
       session.revoke(new Date(), "USER_LOGOUT");
       await adminSessionRepository.update(session);
 
-      const reloaded = await adminSessionRepository.findByTokenHash("token-hash-1");
+      const reloaded = await adminSessionRepository.findByTokenHash("2".repeat(64));
       expect(reloaded?.isRevoked()).toBe(true);
     });
   });
@@ -380,8 +514,8 @@ describe("Admin Auth Repositories (section 13.2)", () => {
         emailHash: "e".repeat(64),
         success: true,
         failureReason: null,
-        ipHash: "i".repeat(64),
-        userAgentHash: "u".repeat(64),
+        ipHash: "1".repeat(64),
+        userAgentHash: "2".repeat(64),
         requestId: randomUUID(),
         now: new Date(),
       });
@@ -393,6 +527,26 @@ describe("Admin Auth Repositories (section 13.2)", () => {
       expect(serialized).not.toContain("owner@acme.example.com");
       expect(serialized).not.toContain("203.0.113");
       expect(row.emailHash).toBe("e".repeat(64));
+    });
+
+    it("the IP rate-limit query can be satisfied by an index (review-fix P1-3)", async () => {
+      // The test table has too few rows for Postgres's cost-based planner
+      // to ever prefer an Index Scan over a Seq Scan on its own — that's
+      // a row-count artifact of a fresh test DB, not evidence the index
+      // is missing or unusable. `enable_seqscan = off` forces the planner
+      // to use an index whenever one *can* satisfy the query, which is
+      // the actual thing review-fix P1-3 asks to confirm ("Index
+      // 利用可能性" — usability, not "is it cost-optimal on this table").
+      const plan = await client.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe("SET LOCAL enable_seqscan = off");
+        const rows = await tx.$queryRawUnsafe<{ "QUERY PLAN": string }[]>(
+          `EXPLAIN SELECT count(*) FROM "admin_login_events"
+           WHERE ip_hash = $1 AND success = false AND created_at >= now() - interval '15 minutes'`,
+          "5".repeat(64),
+        );
+        return rows.map((row) => row["QUERY PLAN"]).join("\n");
+      });
+      expect(plan).toContain("admin_login_events_ip_hash_success_created_at_idx");
     });
 
     it("counts recent failures by ipHash within the window and excludes older/other events", async () => {
@@ -411,13 +565,15 @@ describe("Admin Auth Repositories (section 13.2)", () => {
           now: overrides.now,
         });
 
-      await record({ ipHash: "target-ip", success: false, now: new Date("2026-01-01T00:20:00Z") }); // within window
-      await record({ ipHash: "target-ip", success: false, now: new Date("2025-12-31T00:00:00Z") }); // too old
-      await record({ ipHash: "target-ip", success: true, now: new Date("2026-01-01T00:25:00Z") }); // success, not counted
-      await record({ ipHash: "other-ip", success: false, now: new Date("2026-01-01T00:25:00Z") }); // different IP
+      const targetIpHash = "3".repeat(64);
+      const otherIpHash = "4".repeat(64);
+      await record({ ipHash: targetIpHash, success: false, now: new Date("2026-01-01T00:20:00Z") }); // within window
+      await record({ ipHash: targetIpHash, success: false, now: new Date("2025-12-31T00:00:00Z") }); // too old
+      await record({ ipHash: targetIpHash, success: true, now: new Date("2026-01-01T00:25:00Z") }); // success, not counted
+      await record({ ipHash: otherIpHash, success: false, now: new Date("2026-01-01T00:25:00Z") }); // different IP
 
       const count = await adminLoginEventRepository.countRecentFailuresByIpHash(
-        "target-ip",
+        targetIpHash,
         now,
         15 * 60,
       );

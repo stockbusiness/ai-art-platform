@@ -12,6 +12,10 @@ export const adminAuthErrorCodeSchema = z.enum([
   "TOO_MANY_ATTEMPTS",
   "UNAUTHENTICATED",
   "FORBIDDEN",
+  // Infrastructure failure (DB unreachable, transaction error, ...) — kept
+  // distinct from UNAUTHENTICATED so a real outage is never reported as
+  // "you are not logged in" (review-fix P0-7).
+  "AUTH_SERVICE_UNAVAILABLE",
 ]);
 
 export type AdminAuthErrorCode = z.infer<typeof adminAuthErrorCodeSchema>;
