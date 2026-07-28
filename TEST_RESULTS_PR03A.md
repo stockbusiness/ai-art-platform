@@ -11,9 +11,10 @@
 ## コミットSHA
 
 `7c7e19b`（本体実装コミット。ローカル検証・Clean
-Clone検証はこの時点で実施）。CI実行・PR作成は`3280eaf`（提出物文書
-追加後の最終コミット）に対して行った — 4節・5節のCI結果は
-`3280eaf`のもの。
+Clone検証はこの時点で実施）。PR作成時点の最終コミットは`3280eaf`
+（提出物文書追加後）。本ファイル自身の更新（CI結果追記）を含む
+最新コミットは`cccedbb` — 4節・5節のCI結果は`cccedbb`に対する
+実行のもの（`3280eaf`時点の結果も参考として4節に残している）。
 
 ## 環境
 
@@ -208,49 +209,53 @@ DROP DATABASE ai_art_platform_ci_check;
 
 GitHub Actions `.github/workflows/ci.yml`（`quality` job、matrix）。
 
-コミット`3280eaf`（PR #3, `feat/pr-03a-admin-auth-rbac`）に対する実行：
-Run ID `30340339218`
-https://github.com/stockbusiness/ai-art-platform/actions/runs/30340339218
+最新コミット`cccedbb`（PR #3, `feat/pr-03a-admin-auth-rbac`）に対する
+実行：Run ID `30340647078`
+https://github.com/stockbusiness/ai-art-platform/actions/runs/30340647078
 
 | Job                                                              | 結果    | 所要時間 |
 | ---------------------------------------------------------------- | ------- | -------- |
-| Install, format, lint, typecheck, test, build (`ubuntu-latest`)  | success | 84秒     |
-| Install, format, lint, typecheck, test, build (`windows-latest`) | success | 187秒    |
+| Install, format, lint, typecheck, test, build (`ubuntu-latest`)  | success | 82秒     |
+| Install, format, lint, typecheck, test, build (`windows-latest`) | success | 168秒    |
 
 各JobのURL：
 
-- ubuntu-latest：https://github.com/stockbusiness/ai-art-platform/actions/runs/30340339218/job/90214279336
-- windows-latest：https://github.com/stockbusiness/ai-art-platform/actions/runs/30340339218/job/90214279384
+- ubuntu-latest：https://github.com/stockbusiness/ai-art-platform/actions/runs/30340647078/job/90215243137
+- windows-latest：https://github.com/stockbusiness/ai-art-platform/actions/runs/30340647078/job/90215243188
 
-結果：両OSとも成功
-（`mcp__github__pull_request_read` `get_check_runs`にて
-`conclusion: "success"`を確認、2026-07-28実行分）。
+両JobともCheck formatting／Lint／Typecheck／Test／Buildの各ステップが
+個別に`success`であることを`list_workflow_jobs`のsteps配列出力で
+直接確認した。
+
+結果：両OSとも成功。
+
+（参考：1つ前のコミット`3280eaf`に対する実行も同様に全成功 —
+Run ID `30340339218`、
+https://github.com/stockbusiness/ai-art-platform/actions/runs/30340339218
+。ubuntu-latest 84秒／windows-latest 187秒。）
 
 ## 5. Database CI 結果
 
-同run内、`database` job（`ubuntu-latest`のみ、Job ID
-`90214279316`）。結果：success（50秒）。
-https://github.com/stockbusiness/ai-art-platform/actions/runs/30340339218/job/90214279316
+同run内（`cccedbb`, Run ID `30340647078`）、`database` job
+（`ubuntu-latest`のみ、Job ID `90215243101`）。結果：success（45秒）。
+https://github.com/stockbusiness/ai-art-platform/actions/runs/30340647078/job/90215243101
 
-今回追加したステップ：
+ステップ単位の結果（`list_workflow_jobs`のsteps配列で個別に確認済み。
+全ステップ`conclusion: "success"`）：
 
-| ステップ                                     | 内容                                                        |
-| -------------------------------------------- | ----------------------------------------------------------- |
-| Deploy migrations (PR-02 + PR-03A)           | `pnpm db:migrate:deploy`（2 migration適用）                 |
-| Re-deploy migrations (idempotency check)     | `pnpm db:migrate:deploy`（2回目、no-op確認）                |
-| Seed                                         | `pnpm db:seed`                                              |
-| Bootstrap CLI — create the first SUPER_ADMIN | `pnpm admin:bootstrap`（成功が必須。失敗時はjob失敗）       |
-| Bootstrap CLI — rejects a duplicate admin    | 同一設定で再実行し、失敗（非ゼロ終了）することをShellで確認 |
-| Integration test (Tenant + Admin Auth)       | `pnpm test:integration`（81件）                             |
+| ステップ                                     | 結果    | 内容                                                |
+| -------------------------------------------- | ------- | --------------------------------------------------- |
+| Deploy migrations (PR-02 + PR-03A)           | success | `pnpm db:migrate:deploy`（2 migration適用）         |
+| Re-deploy migrations (idempotency check)     | success | `pnpm db:migrate:deploy`（2回目、no-op確認）        |
+| Seed                                         | success | `pnpm db:seed`                                      |
+| Bootstrap CLI — create the first SUPER_ADMIN | success | `pnpm admin:bootstrap`                              |
+| Bootstrap CLI — rejects a duplicate admin    | success | 同一設定で再実行し、非ゼロ終了することをShellで確認 |
+| Integration test (Tenant + Admin Auth)       | success | `pnpm test:integration`（81件）                     |
 
-結果：job全体が成功したことを確認済み（`conclusion: "success"`）。
-個別ステップのログ本文（`get_job_logs`）はGitHub Actions
-UIでのみ閲覧可能で、本書はjob全体の結果として記録している —
-job結果が成功である以上、シェル側の
-`if pnpm admin:bootstrap; then exit 1; fi`
-アサーションを含む全ステップが成功したことはjobの成功によって
-保証される（個別ステップのログ本文までは未確認。詳細は「23.
-未実施項目」参照）。
+結果：job全体および個別ステップすべてが成功したことを
+`list_workflow_jobs`のsteps配列出力で直接確認した（ログ本文
+＝`get_job_logs`は今回は未取得だが、各ステップの`conclusion`
+フィールドは確認済み）。
 
 ---
 
